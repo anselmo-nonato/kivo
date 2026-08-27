@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
@@ -545,13 +545,13 @@ export default function TransactionsPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-3">
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">Categoria</label>
                     <select
                       value={categoryId}
                       onChange={(e) => setCategoryId(e.target.value)}
-                      className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs"
                     >
                       {categories.map((c) => (
                         <option key={c.id} value={c.id}>
@@ -565,13 +565,39 @@ export default function TransactionsPage() {
                     <select
                       value={costCenterId}
                       onChange={(e) => setCostCenterId(e.target.value)}
-                      className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs"
                     >
                       {costCenters.map((cc) => (
                         <option key={cc.id} value={cc.id}>
                           {cc.name} ({cc.scope})
                         </option>
                       ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      {type === "income" ? "Natureza da Renda" : "Classificação (50-30-20)"}
+                    </label>
+                    <select
+                      value={essentiality}
+                      onChange={(e) => setEssentiality(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-semibold"
+                    >
+                      {type === "income" ? (
+                        <>
+                          <option value="essential">💼 Renda Principal (Salário/Pró-labore)</option>
+                          <option value="lifestyle">🤝 Renda Extra / Freelance</option>
+                          <option value="debt">🎁 Bônus / PLR / 13º</option>
+                          <option value="waste">🏠 Aluguel / Investimentos / Reembolso</option>
+                        </>
+                      ) : (
+                        <>
+                          <option value="essential">🏠 Essencial (50%)</option>
+                          <option value="lifestyle">🍿 Estilo de Vida (30%)</option>
+                          <option value="debt">💳 Dívida / Encargos (20%)</option>
+                          <option value="waste">⚠️ Ralo / Desperdício</option>
+                        </>
+                      )}
                     </select>
                   </div>
                 </div>

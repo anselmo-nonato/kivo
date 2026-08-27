@@ -494,16 +494,29 @@ export default function RecurringPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Classificação 50-30-20</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      {type === "income" ? "Natureza / Tipo da Renda" : "Classificação 50-30-20"}
+                    </label>
                     <select
                       value={essentiality}
                       onChange={(e) => setEssentiality(e.target.value)}
                       className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-semibold"
                     >
-                      <option value="essential">Essencial (Sobrevivência, Moradia, Salário)</option>
-                      <option value="lifestyle">Estilo de Vida (Streaming, Conforto)</option>
-                      <option value="waste">Ralo / Desperdício (Assinatura não usada)</option>
-                      <option value="debt">Dívida / Financiamento</option>
+                      {type === "income" ? (
+                        <>
+                          <option value="essential">💼 Renda Principal (Salário CLT / Pró-labore)</option>
+                          <option value="lifestyle">🏠 Renda Imobiliária / Aluguel Recebido</option>
+                          <option value="debt">🎓 Aposentadoria / Pensão / Benefício</option>
+                          <option value="waste">📈 Rendimentos de Investimentos / Outros</option>
+                        </>
+                      ) : (
+                        <>
+                          <option value="essential">🏠 Essencial (50% - Moradia, Água, Luz, Condomínio)</option>
+                          <option value="lifestyle">🍿 Estilo de Vida (30% - Streaming, Academia, Conforto)</option>
+                          <option value="debt">💳 Dívidas & Financiamentos (20% - Parcelas, Empréstimos)</option>
+                          <option value="waste">⚠️ Ralo / Desperdício (Assinatura não usada, Multas)</option>
+                        </>
+                      )}
                     </select>
                   </div>
                 </div>
