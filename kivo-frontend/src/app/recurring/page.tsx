@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
@@ -193,7 +193,7 @@ export default function RecurringPage() {
       <div className="space-y-8">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-extrabold text-slate-900">Despesas & Receitas Fixas</h1>
+            <h1 className="text-2xl font-extrabold text-slate-900">Contas & Rendas Fixas</h1>
             <p className="text-xs text-slate-500">
               Controle de salários, pró-labore, aluguel, assinaturas e previsibilidade de caixa
             </p>
