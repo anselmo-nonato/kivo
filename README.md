@@ -1,4 +1,4 @@
-﻿# KIVO — A Chave da sua Virada Financeira 🚀
+# KIVO — A Chave da sua Virada Financeira 🚀
 
 Plataforma inteligente de gestão financeira pessoal e familiar, construída com arquitetura REST API First, Clean Architecture, suporte a Multi-Tenancy (Modo Solo e Modo Família), 2FA nativo (Google Authenticator TOTP RFC 6238), Taxonomia 4D + Tags, Equalização Justa de Despesas do Casal e Motor de Quitação de Dívidas (Avalanche vs. Bola de Neve).
 
@@ -50,4 +50,12 @@ docker exec kivo_api python tests/test_analytics_flow.py
 
 ## 📄 Documentação Técnica Completa
 
-Consulte o diretório [`docs/`](./docs/) para manuais de produto, regras de negócio, contratos de API e modelos matemáticos.
+Consulte o diretório [`docs/`](./docs/) para manuais de produto, regras de negócio, contratos de API e modelos matemáticos:
+* `docs/01_visao_e_objetivos.md` — Visão geral e proposta de valor
+* `docs/02_modelo_de_dados_e_categorizacao.md` — Modelo 4D e Multi-Tenant
+* `docs/03_indicadores_e_regras_de_negocio.md` — Algoritmos de Equalização e Quitação
+* `docs/07_arquitetura_de_software_e_stack.md` — Clean Architecture & Docker
+* `docs/08_autenticacao_e_seguranca_2fa.md` — RFC 6238 TOTP e Argon2id
+* `docs/13_backlog_e_melhorias_futuras.md` — RFC Cartões de Crédito Avançados (#26)
+* `docs/14_trusted_device_2fa_e_persistencia.md` — Especificação Dispositivos Confiáveis 30D (#27)
+
