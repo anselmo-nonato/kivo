@@ -21,10 +21,12 @@
 ## 3. Módulo: Lançamentos, Parcelamentos e Tags
 * **Lançamento Rápido:** Entrada de dados com classificação em 4 dimensões (Dono, Centro de Custo, Essencialidade, Categoria).
 * **Compras Parceladas:** Criação automática de parcelas futuras vinculadas (`1/12`, `2/12`...).
-* **🏷️ Sistema de Tags / Projetos:**
-  * Inclusão rápida de tags pelo símbolo `#` no campo de descrição ou seletor múltiplo.
-  * Filtro por uma ou mais tags na listagem de extrato.
-  * Painel de Projetos/Eventos: consolidação de custos totais por tag (ex: custo total da `#ViagemGramado`).
+* **🏷️ Campo Específico para Tags (Multi-Select com Criação Inline):**
+  * Campo dedicado no formulário de transação onde o usuário pode selecionar uma ou mais tags existentes via combobox/badges.
+  * Criação instantânea de novas tags diretamente pelo campo (digita o nome e pressiona `Enter`).
+  * A descrição da transação permanece limpa (sem necessidade de misturar hashtags no texto).
+  * Filtro por tags no extrato e visualização de badges coloridos nos lançamentos.
+  * **Painel de Projetos e Eventos:** Consolidação de custos totais por tag (ex: custo total acumulado de `#ViagemGramado` ou `#ReformaCozinha`).
 
 ---
 
