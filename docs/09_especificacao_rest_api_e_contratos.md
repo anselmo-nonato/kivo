@@ -45,14 +45,17 @@
 
 ---
 
-### 2.3. Módulo: Centros de Custo e Categorias (`/api/v1/cost-centers` & `/api/v1/categories`)
+### 2.3. Módulo: Centros de Custo, Categorias e Tags (`/api/v1/cost-centers`, `/api/v1/categories`, `/api/v1/tags`)
 
 | Método | Endpoint | Descrição |
 | :--- | :--- | :--- |
-| `GET` | `/api/v1/cost-centers` | Lista centros de custo (Casa, Família, Casal, Pessoal A, Pessoal B). |
+| `GET` | `/api/v1/cost-centers` | Lista centros de custo (Casa, Família, Casal, Pessoais). |
 | `POST` | `/api/v1/cost-centers` | Cria centro de custo personalizado. |
 | `GET` | `/api/v1/categories` | Lista árvore de categorias e subcategorias. |
 | `POST` | `/api/v1/categories` | Cria nova categoria/subcategoria com ícone e cor. |
+| `GET` | `/api/v1/tags` | Lista todas as tags ativas do workspace com contagem de uso. |
+| `POST` | `/api/v1/tags` | Cria uma nova tag com nome e cor personalizada. |
+| `DELETE`| `/api/v1/tags/{id}` | Remove uma tag do workspace. |
 
 ---
 
@@ -70,9 +73,9 @@
 
 | Método | Endpoint | Descrição |
 | :--- | :--- | :--- |
-| `GET` | `/api/v1/transactions` | Lista lançamentos com filtros avançados, paginação e busca. |
-| `POST` | `/api/v1/transactions` | Cria nova transação (suporta lançamentos únicos ou parcelados). |
-| `GET` | `/api/v1/transactions/{id}` | Detalhes de uma transação específica. |
+| `GET` | `/api/v1/transactions` | Lista lançamentos com filtros avançados, tags, paginação e busca. |
+| `POST` | `/api/v1/transactions` | Cria nova transação (suporta lançamentos únicos, parcelados e tags). |
+| `GET` | `/api/v1/transactions/{id}` | Detalhes de uma transação específica com suas tags associadas. |
 | `PUT` | `/api/v1/transactions/{id}` | Edita transação (ou todas as parcelas futuras da série). |
 | `DELETE`| `/api/v1/transactions/{id}` | Remove transação. |
 
@@ -109,16 +112,16 @@
 
 ---
 
-### 2.9. Módulo: Projeção & Fluxo de Caixa Preditivo (`/api/v1/projections`)
+### 2.9. Módulo: Relatórios por Tags / Projetos (`/api/v1/reports/tags`)
 
 | Método | Endpoint | Descrição |
 | :--- | :--- | :--- |
-| `GET` | `/api/v1/projections/cashflow` | Projeção mensal de receitas, despesas e saldo para 12 meses. |
-| `POST` | `/api/v1/projections/scenario` | Simulação de impacto de novas compras ou viagens no orçamento. |
+| `GET` | `/api/v1/reports/tags` | Lista custos consolidados por tag (ex: totais de cada viagem/projeto). |
+| `GET` | `/api/v1/reports/tags/{id}` | Extrato detalhado de todas as despesas daquela tag específica. |
 
 ---
 
-## 3. Padrão de Paginação, Filtros e Ordenação
+## 3. Padrão de Paginação, Filtros e Tags
 
 Todas as rotas de listagem suportam os seguintes parâmetros padrão via query string:
 
@@ -132,26 +135,7 @@ GET /api/v1/transactions?
   &essentiality=essential
   &member_id=uuid-anselmo
   &category_id=uuid-alimentacao
+  &tags=viagem-gramado,reforma-cozinha
   &sort=-date,amount
   &search=supermercado
-```
-
----
-
-## 4. Padrão de Resposta de Erros (RFC 7807)
-
-```json
-{
-  "type": "https://api.kivo.app/errors/budget-limit-exceeded",
-  "title": "Limite Orçamentário Ultrapassado",
-  "status": 422,
-  "detail": "A categoria 'Restaurantes' ultrapassou o teto parametrizado de R$ 800,00.",
-  "instance": "/api/v1/transactions",
-  "invalid_params": [
-    {
-      "name": "amount",
-      "reason": "O valor de R$ 150,00 excede a margem restante de R$ 30,00."
-    }
-  ]
-}
 ```

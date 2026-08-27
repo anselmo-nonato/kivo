@@ -17,28 +17,25 @@ erDiagram
     WORKSPACES ||--o{ ACCOUNTS : possui
     WORKSPACES ||--o{ COST_CENTERS : organiza
     WORKSPACES ||--o{ CATEGORIES : classifica
+    WORKSPACES ||--o{ TAGS : mantem
     WORKSPACES ||--o{ TRANSACTIONS : registra
+    TRANSACTIONS ||--o{ TRANSACTION_TAGS : contem
+    TAGS ||--o{ TRANSACTION_TAGS : vincula
     WORKSPACES ||--o{ DEBTS : gerencia
     WORKSPACES ||--o{ EMERGENCY_FUND : resguarda
     WORKSPACES ||--o{ BUDGET_LIMITS : parametriza
 
-    USERS {
+    TAGS {
         uuid id PK
-        string email UK
-        string password_hash
-        string full_name
-        boolean mfa_enabled
-        string mfa_secret_encrypted
+        uuid workspace_id FK
+        string name
+        string color
         timestamp created_at
     }
 
-    WORKSPACES {
-        uuid id PK
-        string name
-        enum type "solo | family"
-        uuid owner_id FK
-        string currency
-        timestamp created_at
+    TRANSACTION_TAGS {
+        uuid transaction_id FK
+        uuid tag_id FK
     }
 
     TRANSACTIONS {
@@ -56,17 +53,6 @@ erDiagram
         int installment_current
         int installment_total
         text notes
-    }
-
-    DEBTS {
-        uuid id PK
-        uuid workspace_id FK
-        uuid member_id FK
-        string creditor_name
-        decimal current_balance "NUMERIC(15,2)"
-        decimal monthly_interest_rate
-        decimal installment_amount
-        int remaining_installments
     }
 ```
 
@@ -120,7 +106,7 @@ CREATE TABLE workspace_members (
     role member_role NOT NULL DEFAULT 'member',
     display_name VARCHAR(100) NOT NULL,
     declared_income NUMERIC(15, 2) DEFAULT 0.00,
-    custom_split_percentage NUMERIC(5, 2) NULL, -- se nulo, calcula automático
+    custom_split_percentage NUMERIC(5, 2) NULL,
     joined_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE (workspace_id, user_id)
 );
@@ -148,7 +134,17 @@ CREATE TABLE categories (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 7. Contas Bancárias e Cartões de Crédito
+-- 7. Tags / Etiquetas Livres para Projetos e Eventos
+CREATE TABLE tags (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+    name VARCHAR(50) NOT NULL,
+    color VARCHAR(7) DEFAULT '#3B82F6',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (workspace_id, name)
+);
+
+-- 8. Contas Bancárias e Cartões de Crédito
 CREATE TYPE account_type AS ENUM ('checking', 'credit_card', 'wallet', 'investment');
 
 CREATE TABLE accounts (
@@ -165,7 +161,7 @@ CREATE TABLE accounts (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 8. Transações Financeiras (Lançamentos)
+-- 9. Transações Financeiras (Lançamentos)
 CREATE TYPE transaction_type AS ENUM ('income', 'expense', 'transfer', 'debt_payment', 'fund_deposit');
 CREATE TYPE essentiality_grade AS ENUM ('essential', 'lifestyle', 'waste', 'debt', 'reserve');
 CREATE TYPE transaction_status AS ENUM ('paid', 'pending');
@@ -191,7 +187,14 @@ CREATE TABLE transactions (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 9. Dívidas e Passivos (Módulo Sair do Vermelho)
+-- 10. Tabela Associativa: Lançamentos <-> Tags (Muitos-para-Muitos)
+CREATE TABLE transaction_tags (
+    transaction_id UUID NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+    tag_id UUID NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (transaction_id, tag_id)
+);
+
+-- 11. Dívidas e Passivos (Módulo Sair do Vermelho)
 CREATE TABLE debts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -199,7 +202,7 @@ CREATE TABLE debts (
     creditor_name VARCHAR(150) NOT NULL,
     original_amount NUMERIC(15, 2) NOT NULL,
     current_balance NUMERIC(15, 2) NOT NULL,
-    monthly_interest_rate NUMERIC(6, 4) NOT NULL, -- Ex: 0.0450 para 4.5%
+    monthly_interest_rate NUMERIC(6, 4) NOT NULL,
     installment_amount NUMERIC(15, 2) NOT NULL,
     remaining_installments INT NOT NULL,
     due_day SMALLINT NOT NULL,
@@ -207,7 +210,7 @@ CREATE TABLE debts (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 10. Reserva de Emergência
+-- 12. Reserva de Emergência
 CREATE TABLE emergency_fund (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id UUID UNIQUE NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -216,7 +219,7 @@ CREATE TABLE emergency_fund (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 11. Radar de Desvios e Limites Parametrizáveis
+-- 13. Radar de Desvios e Limites Parametrizáveis
 CREATE TABLE budget_limits (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -224,7 +227,7 @@ CREATE TABLE budget_limits (
     cost_center_id UUID NULL REFERENCES cost_centers(id),
     limit_amount NUMERIC(15, 2) NULL,
     limit_percentage_income NUMERIC(5, 2) NULL,
-    alert_threshold_percentage NUMERIC(5, 2) DEFAULT 75.00, -- Alerta amarelo em 75%
+    alert_threshold_percentage NUMERIC(5, 2) DEFAULT 75.00,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 ```
@@ -234,18 +237,19 @@ CREATE TABLE budget_limits (
 ## 3. Índices Estratégicos de Performance
 
 ```sql
--- Otimização da listagem de extratos e gráficos temporais
+-- Otimização da listagem de extratos e filtros
 CREATE INDEX idx_transactions_workspace_date 
 ON transactions (workspace_id, transaction_date DESC);
 
--- Otimização para filtros por centros de custo e membros
 CREATE INDEX idx_transactions_cost_center 
 ON transactions (workspace_id, cost_center_id, transaction_date);
 
 CREATE INDEX idx_transactions_member 
 ON transactions (workspace_id, paid_by_member_id, transaction_date);
 
--- Otimização para relatórios de desperdício e radar
 CREATE INDEX idx_transactions_essentiality 
 ON transactions (workspace_id, essentiality, transaction_date);
+
+CREATE INDEX idx_transaction_tags_tag 
+ON transaction_tags (tag_id);
 ```

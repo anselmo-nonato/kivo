@@ -1,55 +1,58 @@
-﻿# Módulos Funcionais e Especificação de Requisitos
+﻿# Módulos Funcionais e Regras de Negócio — KIVO
 
-Mapeamento dos módulos que compõem o sistema de gestão financeira familiar.
-
----
-
-## 1. Módulo: Central de Lançamentos e Conciliação
-- **Registro Rápido:** Formulário ágil para lançamentos avulsos com preenchimento das 4 dimensões (Membro, Centro de Custo, Essencialidade, Categoria).
-- **Importação e Extratos:** Capacidade de importar faturas de cartão e extratos bancários (OFX / CSV) com auto-sugestão de categorização por histórico.
-- **Gestão de Parcelamentos:** Controle automático de parcelas (ex: 3/10) com impacto nas faturas e fluxo futuro.
+**Status:** Aprovado  
+**Escopo:** Funcionalidades do Sistema (Frontend e Backend)  
 
 ---
 
-## 2. Módulo: Balanço do Casal e Centros de Custo
-- **Dashboard Individual vs. Conjunto:**
-  - Visão exclusiva de Anselmo (Rendimento, Gastos Pessoais, Cota-parte da Casa).
-  - Visão exclusiva de Nathália (Rendimento, Gastos Pessoais, Cota-parte da Casa).
-  - Visão Consolidada da Família.
-- **Equalizador Automático:** Cálculo do acerto mensal entre o casal para equilibrar os pagamentos das despesas comuns da casa.
+## 1. Módulo: Autenticação, Usuários e Workspaces
+* **Cadastro e Login:** Suporte a e-mail, senha com Argon2id e 2FA via Google Authenticator (TOTP RFC 6238).
+* **Modo Solo vs. Modo Família:** Alternância instantânea de Workspace no topo da aplicação.
+* **Gestão de Membros:** Convite de parceiros(as) e familiares com definição de renda mensal declarada.
 
 ---
 
-## 3. Módulo: Plano Tático de Eliminação de Dívidas (Sair do Vermelho)
-- **Inventário Completo de Passivos:** Cadastro de credor, saldo devedor atual, taxa de juros real, Custo Efetivo Total (CET) e valor da parcela.
-- **Estratégias de Amortização:**
-  - **Método Avalanche (Mais econômico):** Foco prioritário na dívida com maior taxa de juros.
-  - **Método Bola de Neve (Mais motivador):** Foco na menor dívida para rápida eliminação e liberação de fluxo de caixa.
-- **Simulador de Antecipação:** Permite simular: *"Se eu colocar R$ 500 extras este mês nesta dívida, quantos meses e quantos reais de juros economizo?"*
+## 2. Módulo: Contas Bancárias, Carteiras e Cartões
+* **Contas Correntes e Investimentos:** Saldo em tempo real com conciliação.
+* **Cartões de Crédito:** Controle de limites, datas de fechamento e faturas (aberta, fechada, futuras).
 
 ---
 
-## 4. Módulo: Cofre e Metas de Reserva de Emergência
-- **Cálculo Dinâmico do Custo Essencial:** O sistema calcula a média mensal real de despesas classificadas como `🟢 Essencial` nos últimos 3 a 6 meses.
-- **Termômetro da Reserva:**
-  - Nível 1: Mini-reserva de segurança (R$ 2.000 a R$ 5.000) durante a fase de pagamento de dívidas.
-  - Nível 2: 3 meses de custo essencial da casa.
-  - Nível 3: 6 meses de custo essencial da casa.
-- **Histórico de Rendimentos:** Acompanhamento do rendimento dos aportes (ex: 100% CDI / Tesouro Selic).
+## 3. Módulo: Lançamentos, Parcelamentos e Tags
+* **Lançamento Rápido:** Entrada de dados com classificação em 4 dimensões (Dono, Centro de Custo, Essencialidade, Categoria).
+* **Compras Parceladas:** Criação automática de parcelas futuras vinculadas (`1/12`, `2/12`...).
+* **🏷️ Sistema de Tags / Projetos:**
+  * Inclusão rápida de tags pelo símbolo `#` no campo de descrição ou seletor múltiplo.
+  * Filtro por uma ou mais tags na listagem de extrato.
+  * Painel de Projetos/Eventos: consolidação de custos totais por tag (ex: custo total da `#ViagemGramado`).
 
 ---
 
-## 5. Módulo: Radar de Desvios e Parametrização de Gastos
-- **Configuração de Tetos por Categoria:**
-  - Definição de limites em R$ ou % da receita líquida (Ex: Restaurantes não podem passar de R$ 800/mês ou 8% da renda).
-- **Semáforo de Gastos:**
-  - 🟢 Verde: Até 75% do teto consumido.
-  - 🟡 Amarelo: Entre 75% e 99% consumido.
-  - 🔴 Vermelho: Teto estourado (Alerta de gasto desconexo).
-- **Relatório de Desperdícios:** Sumário de tudo que foi marcado como `🔴 Desperdício` no mês para revisão em conjunto pelo casal.
+## 4. Módulo: Equalização e Rateio Justo do Casal
+* **Divisão Proporcional:** Cálculo da participação justa baseada na renda líquida declarada ($R_A / (R_A + R_B)$).
+* **Extrato de Acerto de Contas:** Cálculo em tempo real de quem pagou mais despesas da Casa/Casal e quanto deve receber de reembolso.
 
 ---
 
-## 6. Módulo: Projeção Futura e Cenários
-- **Fluxo de Caixa Preditivo (12 Meses):** Gráfico de linha demonstrando a curva prevista de receitas, despesas fixas, parcelas a vencer e saldo remanescente mês a mês.
-- **Simulador de Decisão:** *"Podemos fazer essa viagem no mês X?"* ou *"Podemos comprar este bem parcelado?"* — o sistema simula o impacto no orçamento dos meses seguintes e no tempo de conclusão da reserva de emergência.
+## 5. Módulo: Sair do Vermelho (Desalavancagem)
+* **Cadastro de Dívidas:** Saldo devedor, taxa de juros a.m. e parcelas restantes.
+* **Simulador de Quitação:** Comparador entre Método Avalanche (maior juro primeiro) e Bola de Neve (menor saldo primeiro).
+* **Termômetro DTI:** Indicador visual de comprometimento de renda com dívidas.
+
+---
+
+## 6. Módulo: Radar de Gastos e Ralos Financeiros
+* **Tetos por Categoria:** Limites orçamentários com semáforo de ritmo de consumo.
+* **Detector de Desperdício:** Relatório exclusivo de gastos supérfluos e impacto financeiro anual.
+
+---
+
+## 7. Módulo: Cofre da Reserva de Emergência
+* **Meta Dinâmica:** Recalculada com base na média real dos gastos essenciais dos últimos 6 meses.
+* **Termômetro da Reserva:** Cobertura em meses e progresso percentual.
+
+---
+
+## 8. Módulo: Projeção de Fluxo de Caixa
+* **Visão 12 Meses:** Projeção preditiva do saldo futuro considerando receitas, despesas fixas e parcelas.
+* **Simulador "Posso Comprar?":** Avaliação de impacto de novas compras no orçamento futuro.
