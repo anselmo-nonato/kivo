@@ -259,3 +259,32 @@ class BudgetLimit(Base):
     workspace = relationship("Workspace", back_populates="budget_limits")
     category = relationship("Category")
     cost_center = relationship("CostCenter")
+
+
+class RecurringBill(Base):
+    __tablename__ = "recurring_bills"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
+    account_id = Column(UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True)
+    paid_by_member_id = Column(UUID(as_uuid=True), ForeignKey("workspace_members.id", ondelete="SET NULL"), nullable=True)
+    cost_center_id = Column(UUID(as_uuid=True), ForeignKey("cost_centers.id", ondelete="SET NULL"), nullable=True)
+    category_id = Column(UUID(as_uuid=True), ForeignKey("categories.id", ondelete="SET NULL"), nullable=True)
+    description = Column(String(255), nullable=False)
+    amount = Column(Numeric(15, 2), nullable=False)
+    type = Column(String(20), default="expense", nullable=False)
+    essentiality = Column(String(20), default="essential", nullable=False)
+    frequency = Column(String(20), default="monthly", nullable=False) # monthly, annual, weekly
+    due_day = Column(Integer, default=10, nullable=False)
+    start_date = Column(Date, default=date.today, nullable=False)
+    end_date = Column(Date, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    workspace = relationship("Workspace")
+    account = relationship("Account")
+    category = relationship("Category")
+    cost_center = relationship("CostCenter")
+    member = relationship("WorkspaceMember")
+

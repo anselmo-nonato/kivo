@@ -23,7 +23,8 @@ from app.models import (
     transaction_tags,
     TransactionType,
     EssentialityGrade,
-    TransactionStatus
+    TransactionStatus,
+    RecurringBill
 )
 from app.schemas.financial import (
     AccountCreateRequest,
@@ -39,7 +40,11 @@ from app.schemas.financial import (
     TransactionCreateRequest,
     TransactionUpdateRequest,
     TransactionResponse,
-    MonthlyFinancialSummary
+    MonthlyFinancialSummary,
+    RecurringBillCreateRequest,
+    RecurringBillUpdateRequest,
+    RecurringBillResponse,
+    RecurringSummaryResponse
 )
 from app.api.deps import get_current_user
 from app.api.v1.endpoints.workspaces import get_workspace_membership
@@ -544,3 +549,187 @@ async def get_monthly_summary(
         by_essentiality=by_essentiality,
         by_cost_center=by_cost_center
     )
+
+
+# ==================== 6. DESPESAS E RECEITAS FIXAS / RECORRENTES ====================
+
+def build_recurring_response(bill: RecurringBill) -> RecurringBillResponse:
+    return RecurringBillResponse(
+        id=bill.id,
+        workspace_id=bill.workspace_id,
+        account_id=bill.account_id,
+        account_name=bill.account.name if bill.account else None,
+        paid_by_member_id=bill.paid_by_member_id,
+        paid_by_member_name=bill.member.display_name if bill.member else None,
+        cost_center_id=bill.cost_center_id,
+        cost_center_name=bill.cost_center.name if bill.cost_center else None,
+        category_id=bill.category_id,
+        category_name=bill.category.name if bill.category else None,
+        description=bill.description,
+        amount=bill.amount,
+        type=bill.type,
+        essentiality=bill.essentiality,
+        frequency=bill.frequency,
+        due_day=bill.due_day,
+        start_date=bill.start_date,
+        end_date=bill.end_date,
+        is_active=bill.is_active,
+        created_at=bill.created_at
+    )
+
+
+@router.get("/{workspace_id}/recurring", response_model=RecurringSummaryResponse, summary="Listar e Resumir Despesas Fixas")
+async def list_recurring_bills(
+    workspace_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    await get_workspace_membership(workspace_id, current_user.id, db)
+
+    stmt = select(RecurringBill).where(
+        RecurringBill.workspace_id == workspace_id
+    ).options(
+        selectinload(RecurringBill.account),
+        selectinload(RecurringBill.category),
+        selectinload(RecurringBill.cost_center),
+        selectinload(RecurringBill.member)
+    ).order_by(RecurringBill.due_day.asc())
+
+    bills = (await db.execute(stmt)).scalars().all()
+
+    total_expense = Decimal("0.00")
+    total_income = Decimal("0.00")
+    active_count = 0
+
+    for b in bills:
+        if b.is_active:
+            active_count += 1
+            if b.type == "income":
+                total_income += b.amount
+            else:
+                total_expense += b.amount
+
+    return RecurringSummaryResponse(
+        total_monthly_fixed_expenses=total_expense,
+        total_monthly_fixed_income=total_income,
+        net_fixed_balance=total_income - total_expense,
+        total_active_bills=active_count,
+        bills=[build_recurring_response(b) for b in bills]
+    )
+
+
+@router.post("/{workspace_id}/recurring", response_model=RecurringBillResponse, status_code=status.HTTP_201_CREATED, summary="Cadastrar Despesa / Conta Fixa")
+async def create_recurring_bill(
+    workspace_id: UUID,
+    req: RecurringBillCreateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    await get_workspace_membership(workspace_id, current_user.id, db)
+
+    bill = RecurringBill(
+        id=uuid.uuid4(),
+        workspace_id=workspace_id,
+        account_id=req.account_id,
+        paid_by_member_id=req.paid_by_member_id,
+        cost_center_id=req.cost_center_id,
+        category_id=req.category_id,
+        description=req.description.strip(),
+        amount=req.amount,
+        type=req.type,
+        essentiality=req.essentiality,
+        frequency=req.frequency,
+        due_day=req.due_day,
+        start_date=req.start_date,
+        end_date=req.end_date,
+        is_active=req.is_active
+    )
+    db.add(bill)
+    await db.commit()
+
+    stmt = select(RecurringBill).where(RecurringBill.id == bill.id).options(
+        selectinload(RecurringBill.account),
+        selectinload(RecurringBill.category),
+        selectinload(RecurringBill.cost_center),
+        selectinload(RecurringBill.member)
+    )
+    saved = (await db.execute(stmt)).scalar_one()
+    return build_recurring_response(saved)
+
+
+@router.put("/{workspace_id}/recurring/{bill_id}", response_model=RecurringBillResponse, summary="Atualizar Despesa Fixa")
+async def update_recurring_bill(
+    workspace_id: UUID,
+    bill_id: UUID,
+    req: RecurringBillUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    await get_workspace_membership(workspace_id, current_user.id, db)
+
+    stmt = select(RecurringBill).where(
+        RecurringBill.id == bill_id,
+        RecurringBill.workspace_id == workspace_id
+    ).options(
+        selectinload(RecurringBill.account),
+        selectinload(RecurringBill.category),
+        selectinload(RecurringBill.cost_center),
+        selectinload(RecurringBill.member)
+    )
+    bill = (await db.execute(stmt)).scalar_one_or_none()
+    if not bill:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Despesa fixa não encontrada.")
+
+    if req.description is not None:
+        bill.description = req.description.strip()
+    if req.amount is not None:
+        bill.amount = req.amount
+    if req.type is not None:
+        bill.type = req.type
+    if req.essentiality is not None:
+        bill.essentiality = req.essentiality
+    if req.frequency is not None:
+        bill.frequency = req.frequency
+    if req.due_day is not None:
+        bill.due_day = req.due_day
+    if req.start_date is not None:
+        bill.start_date = req.start_date
+    if req.end_date is not None:
+        bill.end_date = req.end_date
+    if req.account_id is not None:
+        bill.account_id = req.account_id
+    if req.paid_by_member_id is not None:
+        bill.paid_by_member_id = req.paid_by_member_id
+    if req.cost_center_id is not None:
+        bill.cost_center_id = req.cost_center_id
+    if req.category_id is not None:
+        bill.category_id = req.category_id
+    if req.is_active is not None:
+        bill.is_active = req.is_active
+
+    await db.commit()
+    await db.refresh(bill)
+    return build_recurring_response(bill)
+
+
+@router.delete("/{workspace_id}/recurring/{bill_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Excluir Despesa Fixa")
+async def delete_recurring_bill(
+    workspace_id: UUID,
+    bill_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    await get_workspace_membership(workspace_id, current_user.id, db)
+
+    stmt = select(RecurringBill).where(
+        RecurringBill.id == bill_id,
+        RecurringBill.workspace_id == workspace_id
+    )
+    bill = (await db.execute(stmt)).scalar_one_or_none()
+    if not bill:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Despesa fixa não encontrada.")
+
+    await db.delete(bill)
+    await db.commit()
+    return None
+

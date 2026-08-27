@@ -13,7 +13,8 @@ import {
   TrendingDown,
   ShieldCheck,
   UploadCloud,
-  ChevronRight
+  ChevronRight,
+  CalendarClock
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { APP_VERSION, BUILD_ID, COMMIT_HASH } from "@/lib/version";
@@ -27,6 +28,7 @@ export const Sidebar: React.FC = () => {
   const navigation = [
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { name: "Contas & Cartões", href: "/accounts", icon: CreditCard },
+    { name: "Despesas Fixas", href: "/recurring", icon: CalendarClock },
     { name: "Extrato & Lançamentos", href: "/transactions", icon: ReceiptText },
     { name: "Casal & Família", href: "/couple", icon: Users, badge: isFamily ? "Rateio" : "Solo" },
     { name: "Dívidas & Simulador", href: "/debts", icon: TrendingDown },

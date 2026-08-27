@@ -1,4 +1,4 @@
-﻿from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field
 from typing import Optional, List
 from uuid import UUID
 from datetime import datetime, date
@@ -172,3 +172,67 @@ class MonthlyFinancialSummary(BaseModel):
     savings_rate_percentage: Decimal
     by_essentiality: dict
     by_cost_center: dict
+
+# ==================== CONTAS E DESPESAS FIXAS / RECORRENTES ====================
+class RecurringBillCreateRequest(BaseModel):
+    description: str = Field(..., min_length=1, max_length=255)
+    amount: Decimal = Field(..., gt=0)
+    type: str = Field(default="expense", pattern="^(expense|income)$")
+    essentiality: str = Field(default="essential", pattern="^(essential|lifestyle|waste|debt|reserve)$")
+    frequency: str = Field(default="monthly", pattern="^(monthly|annual|weekly)$")
+    due_day: int = Field(default=10, ge=1, le=31)
+    start_date: date = Field(default_factory=date.today)
+    end_date: Optional[date] = None
+    account_id: Optional[UUID] = None
+    paid_by_member_id: Optional[UUID] = None
+    cost_center_id: Optional[UUID] = None
+    category_id: Optional[UUID] = None
+    is_active: bool = True
+
+class RecurringBillUpdateRequest(BaseModel):
+    description: Optional[str] = Field(None, min_length=1, max_length=255)
+    amount: Optional[Decimal] = Field(None, gt=0)
+    type: Optional[str] = Field(None, pattern="^(expense|income)$")
+    essentiality: Optional[str] = Field(None, pattern="^(essential|lifestyle|waste|debt|reserve)$")
+    frequency: Optional[str] = Field(None, pattern="^(monthly|annual|weekly)$")
+    due_day: Optional[int] = Field(None, ge=1, le=31)
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    account_id: Optional[UUID] = None
+    paid_by_member_id: Optional[UUID] = None
+    cost_center_id: Optional[UUID] = None
+    category_id: Optional[UUID] = None
+    is_active: Optional[bool] = None
+
+class RecurringBillResponse(BaseModel):
+    id: UUID
+    workspace_id: UUID
+    account_id: Optional[UUID] = None
+    account_name: Optional[str] = None
+    paid_by_member_id: Optional[UUID] = None
+    paid_by_member_name: Optional[str] = None
+    cost_center_id: Optional[UUID] = None
+    cost_center_name: Optional[str] = None
+    category_id: Optional[UUID] = None
+    category_name: Optional[str] = None
+    description: str
+    amount: Decimal
+    type: str
+    essentiality: str
+    frequency: str
+    due_day: int
+    start_date: date
+    end_date: Optional[date] = None
+    is_active: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class RecurringSummaryResponse(BaseModel):
+    total_monthly_fixed_expenses: Decimal
+    total_monthly_fixed_income: Decimal
+    net_fixed_balance: Decimal
+    total_active_bills: int
+    bills: List[RecurringBillResponse]
+
