@@ -496,6 +496,29 @@ async def delete_transaction(
     return None
 
 
+@router.post("/{workspace_id}/transactions/{transaction_id}/confirm", response_model=TransactionResponse, summary="Confirmar Efetivação / Baixa de Lançamento")
+async def confirm_transaction(
+    workspace_id: UUID,
+    transaction_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    await get_workspace_membership(workspace_id, current_user.id, db)
+
+    stmt = select(Transaction).where(
+        Transaction.id == transaction_id,
+        Transaction.workspace_id == workspace_id
+    ).options(selectinload(Transaction.tags))
+    tx = (await db.execute(stmt)).scalar_one_or_none()
+    if not tx:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transação não encontrada.")
+
+    tx.status = TransactionStatus.PAID
+    await db.commit()
+    await db.refresh(tx)
+    return build_tx_response(tx, tags=tx.tags)
+
+
 @router.get("/{workspace_id}/summary", response_model=MonthlyFinancialSummary, summary="Resumo Financeiro Mensal")
 async def get_monthly_summary(
     workspace_id: UUID,

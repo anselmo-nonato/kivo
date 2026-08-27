@@ -19,7 +19,9 @@ import {
   X,
   AlertCircle,
   CheckCircle2,
-  Power
+  Power,
+  Wallet,
+  Briefcase
 } from "lucide-react";
 
 export default function RecurringPage() {
@@ -30,6 +32,9 @@ export default function RecurringPage() {
   const [costCenters, setCostCenters] = useState<any[]>([]);
   const [members, setMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Filtro de Visualização
+  const [activeTab, setActiveTab] = useState<"all" | "expenses" | "incomes">("all");
 
   // Modais
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -85,15 +90,15 @@ export default function RecurringPage() {
     loadData();
   }, [activeWorkspace]);
 
-  const handleOpenCreate = () => {
+  const handleOpenCreate = (targetType: "expense" | "income" = "expense") => {
     setIsEditMode(false);
     setSelectedBillId(null);
     setDescription("");
     setAmount("");
-    setType("expense");
+    setType(targetType);
     setEssentiality("essential");
     setFrequency("monthly");
-    setDueDay("10");
+    setDueDay(targetType === "income" ? "5" : "10");
     setStartDate(new Date().toISOString().slice(0, 10));
     setEndDate("");
     setIsActive(true);
@@ -156,7 +161,7 @@ export default function RecurringPage() {
   };
 
   const handleDeleteBill = async (id: string) => {
-    if (!confirm("Tem certeza que deseja excluir esta despesa fixa?")) return;
+    if (!confirm("Tem certeza que deseja excluir esta conta recorrente?")) return;
     try {
       await api.delete(`/workspaces/${activeWorkspace?.id}/recurring/${id}`);
       loadData();
@@ -176,6 +181,13 @@ export default function RecurringPage() {
     }
   };
 
+  // Filtragem por Tab
+  const filteredBills = data?.bills?.filter((b: any) => {
+    if (activeTab === "expenses") return b.type === "expense";
+    if (activeTab === "incomes") return b.type === "income";
+    return true;
+  }) || [];
+
   return (
     <AppLayout>
       <div className="space-y-8">
@@ -183,16 +195,25 @@ export default function RecurringPage() {
           <div>
             <h1 className="text-2xl font-extrabold text-slate-900">Despesas & Receitas Fixas</h1>
             <p className="text-xs text-slate-500">
-              Gerencie seus custos de vida básicos, assinaturas, aluguel e previsibilidade financeira
+              Controle de salários, pró-labore, aluguel, assinaturas e previsibilidade de caixa
             </p>
           </div>
-          <button
-            onClick={handleOpenCreate}
-            className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md shadow-emerald-500/20 flex items-center gap-2 transition-colors cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Nova Conta / Despesa Fixa</span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => handleOpenCreate("income")}
+              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-500/20 flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <TrendingUp className="w-4 h-4" />
+              <span>+ Nova Renda Fixa (Salário)</span>
+            </button>
+            <button
+              onClick={() => handleOpenCreate("expense")}
+              className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-md flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <TrendingDown className="w-4 h-4 text-red-400" />
+              <span>+ Nova Despesa Fixa</span>
+            </button>
+          </div>
         </div>
 
         {/* Cards de Resumo */}
@@ -210,13 +231,13 @@ export default function RecurringPage() {
 
           <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-2">
             <div className="flex items-center justify-between text-slate-400">
-              <span className="text-xs font-bold uppercase tracking-wider">Receitas Fixas</span>
+              <span className="text-xs font-bold uppercase tracking-wider">Receitas Fixas (Salários)</span>
               <TrendingUp className="w-5 h-5 text-emerald-500" />
             </div>
             <div className="text-2xl font-extrabold font-mono text-emerald-600">
               R$ {parseFloat(data?.total_monthly_fixed_income || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
             </div>
-            <p className="text-[11px] text-slate-400">Salários e rendas fixas</p>
+            <p className="text-[11px] text-slate-400">Salários e rendas previsíveis</p>
           </div>
 
           <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-2">
@@ -238,15 +259,50 @@ export default function RecurringPage() {
             <div className="text-2xl font-extrabold font-mono text-purple-600">
               {data?.total_active_bills || 0}
             </div>
-            <p className="text-[11px] text-slate-400">Contratos e assinaturas vigentes</p>
+            <p className="text-[11px] text-slate-400">Contratos e salários cadastrados</p>
           </div>
         </div>
 
-        {/* Tabela de Contas Fixas */}
+        {/* Abas e Tabela */}
         <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
-          <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-            <h3 className="font-bold text-slate-900 text-lg">Contas e Despesas Cadastradas</h3>
-            <span className="text-xs font-semibold text-slate-400">{data?.bills?.length || 0} cadastradas</span>
+          <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            {/* Tabs */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setActiveTab("all")}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
+                  activeTab === "all"
+                    ? "bg-slate-900 text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                Todas ({data?.bills?.length || 0})
+              </button>
+              <button
+                onClick={() => setActiveTab("expenses")}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
+                  activeTab === "expenses"
+                    ? "bg-red-600 text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                Despesas Fixas ({data?.bills?.filter((b: any) => b.type === "expense").length || 0})
+              </button>
+              <button
+                onClick={() => setActiveTab("incomes")}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
+                  activeTab === "incomes"
+                    ? "bg-emerald-600 text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                Receitas Fixas / Salários ({data?.bills?.filter((b: any) => b.type === "income").length || 0})
+              </button>
+            </div>
+
+            <span className="text-xs font-semibold text-slate-400">
+              {filteredBills.length} itens exibidos
+            </span>
           </div>
 
           <div className="overflow-x-auto">
@@ -254,30 +310,42 @@ export default function RecurringPage() {
               <thead className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider">
                 <tr>
                   <th className="py-3.5 px-4">Descrição</th>
+                  <th className="py-3.5 px-4">Tipo</th>
                   <th className="py-3.5 px-4">Categoria / Centro</th>
-                  <th className="py-3.5 px-4">Vencimento</th>
-                  <th className="py-3.5 px-4">Quem Paga</th>
+                  <th className="py-3.5 px-4">Dia do Crédito / Venc.</th>
+                  <th className="py-3.5 px-4">Titular / Responsável</th>
                   <th className="py-3.5 px-4">Status</th>
-                  <th className="py-3.5 px-4 text-right">Valor</th>
+                  <th className="py-3.5 px-4 text-right">Valor Mensal</th>
                   <th className="py-3.5 px-4 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
-                {data?.bills?.map((b: any) => {
+                {filteredBills.map((b: any) => {
                   const isIncome = b.type === "income";
                   return (
                     <tr key={b.id} className={`hover:bg-slate-50/80 transition-colors ${!b.is_active ? "opacity-50" : ""}`}>
                       <td className="py-3.5 px-4">
                         <span className="font-bold text-slate-900 block">{b.description}</span>
                         <span className="text-[10px] text-slate-400">
-                          {b.account_name || "Conta não vinculada"} • Início: {b.start_date}
+                          {b.account_name ? `Conta: ${b.account_name}` : "Sem conta vinculada"} • Início: {b.start_date}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                            isIncome
+                              ? "bg-emerald-100 text-emerald-800"
+                              : "bg-red-100 text-red-800"
+                          }`}
+                        >
+                          {isIncome ? "Renda Fixa" : "Despesa Fixa"}
                         </span>
                       </td>
                       <td className="py-3.5 px-4">
                         <span className="font-semibold text-slate-700 block">{b.category_name || "Geral"}</span>
                         <span className="text-[10px] text-slate-400">{b.cost_center_name || "Casa"}</span>
                       </td>
-                      <td className="py-3.5 px-4 font-mono text-slate-600">
+                      <td className="py-3.5 px-4 font-mono font-bold text-slate-700">
                         Todo dia {b.due_day}
                       </td>
                       <td className="py-3.5 px-4 text-slate-700">
@@ -329,7 +397,7 @@ export default function RecurringPage() {
           </div>
         </div>
 
-        {/* Modal: Novo / Editar Despesa Fixa */}
+        {/* Modal: Novo / Editar Despesa ou Receita Fixa */}
         {isModalOpen && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
             <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-5 relative max-h-[90vh] overflow-y-auto">
@@ -340,9 +408,27 @@ export default function RecurringPage() {
                 <X className="w-5 h-5" />
               </button>
 
-              <h2 className="text-lg font-bold text-slate-900">
-                {isEditMode ? "Editar Despesa / Conta Fixa" : "Nova Despesa / Conta Fixa"}
-              </h2>
+              <div className="flex items-center gap-2">
+                {type === "income" ? (
+                  <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                    <TrendingUp className="w-5 h-5" />
+                  </div>
+                ) : (
+                  <div className="w-8 h-8 rounded-xl bg-red-100 text-red-700 flex items-center justify-center">
+                    <TrendingDown className="w-5 h-5" />
+                  </div>
+                )}
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">
+                    {isEditMode
+                      ? type === "income" ? "Editar Renda Fixa" : "Editar Despesa Fixa"
+                      : type === "income" ? "Cadastrar Renda Fixa (Salário / Pró-labore)" : "Cadastrar Despesa Fixa"}
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    {type === "income" ? "Receitas mensais certas e previsíveis" : "Contas e custos que se repetem todo mês"}
+                  </p>
+                </div>
+              </div>
 
               {error && (
                 <div className="p-3 rounded-xl bg-red-50 text-red-700 text-xs font-semibold flex items-center gap-2">
@@ -353,12 +439,14 @@ export default function RecurringPage() {
 
               <form onSubmit={handleSaveBill} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Descrição</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    {type === "income" ? "Nome da Fonte de Renda" : "Descrição da Conta"}
+                  </label>
                   <input
                     type="text"
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Ex: Aluguel Apartamento, Internet Fibra, Netflix..."
+                    placeholder={type === "income" ? "Ex: Salário Empresa X, Pró-labore, Aluguel Imóvel..." : "Ex: Aluguel Apartamento, Internet Fibra, Netflix..."}
                     required
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-semibold"
                   />
@@ -366,7 +454,7 @@ export default function RecurringPage() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Valor (R$)</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Valor Mensal (R$)</label>
                     <input
                       type="number"
                       step="0.01"
@@ -378,7 +466,9 @@ export default function RecurringPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Dia do Vencimento</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      {type === "income" ? "Dia do Crédito no Mês" : "Dia do Vencimento"}
+                    </label>
                     <input
                       type="number"
                       min="1"
@@ -393,25 +483,25 @@ export default function RecurringPage() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Tipo</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Tipo de Lançamento</label>
                     <select
                       value={type}
                       onChange={(e) => setType(e.target.value)}
-                      className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs"
+                      className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-semibold"
                     >
                       <option value="expense">Despesa Fixa</option>
-                      <option value="income">Receita Fixa (Salário/Pro-labore)</option>
+                      <option value="income">Receita Fixa (Salário / Pró-labore)</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Essencialidade (50-30-20)</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Classificação 50-30-20</label>
                     <select
                       value={essentiality}
                       onChange={(e) => setEssentiality(e.target.value)}
                       className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-semibold"
                     >
-                      <option value="essential">Essencial (Moradia, Água, Luz)</option>
-                      <option value="lifestyle">Estilo de Vida (Streaming, Academia)</option>
+                      <option value="essential">Essencial (Sobrevivência, Moradia, Salário)</option>
+                      <option value="lifestyle">Estilo de Vida (Streaming, Conforto)</option>
                       <option value="waste">Ralo / Desperdício (Assinatura não usada)</option>
                       <option value="debt">Dívida / Financiamento</option>
                     </select>
@@ -420,7 +510,9 @@ export default function RecurringPage() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Conta de Débito Padrão</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      {type === "income" ? "Conta de Destino (Onde cai)" : "Conta de Débito Padrão"}
+                    </label>
                     <select
                       value={accountId}
                       onChange={(e) => setAccountId(e.target.value)}
@@ -435,7 +527,9 @@ export default function RecurringPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Quem Paga (Responsável)</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      {type === "income" ? "Titular da Renda" : "Quem Paga (Responsável)"}
+                    </label>
                     <select
                       value={paidByMemberId}
                       onChange={(e) => setPaidByMemberId(e.target.value)}
@@ -510,7 +604,7 @@ export default function RecurringPage() {
                   type="submit"
                   className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md shadow-emerald-500/20 transition-colors cursor-pointer"
                 >
-                  {isEditMode ? "Salvar Alterações" : "Cadastrar Conta Fixa"}
+                  {isEditMode ? "Salvar Alterações" : type === "income" ? "Cadastrar Renda Fixa" : "Cadastrar Despesa Fixa"}
                 </button>
               </form>
             </div>
