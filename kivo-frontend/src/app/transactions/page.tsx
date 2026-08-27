@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
@@ -392,7 +392,7 @@ export default function TransactionsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Data</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Data (Início / 1ª Parcela)</label>
                     <input
                       type="date"
                       value={transactionDate}

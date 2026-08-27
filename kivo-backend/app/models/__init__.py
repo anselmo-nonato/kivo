@@ -225,6 +225,7 @@ class Debt(Base):
     installment_amount = Column(Numeric(15, 2), nullable=False)
     remaining_installments = Column(Integer, nullable=False)
     due_day = Column(Integer, nullable=False)
+    start_date = Column(Date, default=date.today, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 

@@ -168,6 +168,7 @@ def build_debt_response(d: Debt) -> DebtResponse:
         installment_amount=d.installment_amount,
         remaining_installments=d.remaining_installments,
         due_day=d.due_day,
+        start_date=d.start_date,
         created_at=d.created_at,
         updated_at=d.updated_at
     )
@@ -204,7 +205,8 @@ async def create_debt(
         monthly_interest_rate=req.monthly_interest_rate,
         installment_amount=req.installment_amount,
         remaining_installments=req.remaining_installments,
-        due_day=req.due_day
+        due_day=req.due_day,
+        start_date=req.start_date or date.today()
     )
     db.add(debt)
     await db.commit()
@@ -276,6 +278,12 @@ async def update_debt(
         debt.remaining_installments = req.remaining_installments
     if req.due_day is not None:
         debt.due_day = req.due_day
+    if req.start_date is not None:
+        debt.start_date = req.start_date
+
+    await db.commit()
+    await db.refresh(debt)
+    return build_debt_response(debt)
 
     await db.commit()
     await db.refresh(debt)

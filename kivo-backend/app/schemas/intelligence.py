@@ -44,6 +44,7 @@ class DebtCreateRequest(BaseModel):
     installment_amount: Decimal = Field(..., gt=0)
     remaining_installments: int = Field(..., ge=1)
     due_day: int = Field(..., ge=1, le=31)
+    start_date: Optional[date] = None
 
 class DebtUpdateRequest(BaseModel):
     creditor_name: Optional[str] = Field(None, min_length=2, max_length=150)
@@ -53,6 +54,7 @@ class DebtUpdateRequest(BaseModel):
     installment_amount: Optional[Decimal] = Field(None, gt=0)
     remaining_installments: Optional[int] = Field(None, ge=0)
     due_day: Optional[int] = Field(None, ge=1, le=31)
+    start_date: Optional[date] = None
 
 class DebtPayInstallmentRequest(BaseModel):
     account_id: UUID
@@ -76,6 +78,7 @@ class DebtResponse(BaseModel):
     installment_amount: Decimal
     remaining_installments: int
     due_day: int
+    start_date: Optional[date] = None
     created_at: datetime
     updated_at: datetime
 

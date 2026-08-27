@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
@@ -52,6 +52,7 @@ export default function DebtsPage() {
   const [installmentAmount, setInstallmentAmount] = useState("");
   const [remainingInstallments, setRemainingInstallments] = useState("12");
   const [dueDay, setDueDay] = useState("10");
+  const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
   const [memberId, setMemberId] = useState("");
   const [members, setMembers] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
@@ -95,6 +96,7 @@ export default function DebtsPage() {
     setInstallmentAmount(debt.installment_amount);
     setRemainingInstallments(debt.remaining_installments);
     setDueDay(debt.due_day);
+    setStartDate(debt.start_date || new Date().toISOString().slice(0, 10));
     setIsEditModalOpen(true);
   };
 
@@ -118,6 +120,7 @@ export default function DebtsPage() {
         installment_amount: parseFloat(installmentAmount),
         remaining_installments: parseInt(remainingInstallments),
         due_day: parseInt(dueDay),
+        start_date: startDate,
       });
 
       setIsCreateModalOpen(false);
@@ -141,6 +144,7 @@ export default function DebtsPage() {
         installment_amount: parseFloat(installmentAmount),
         remaining_installments: parseInt(remainingInstallments),
         due_day: parseInt(dueDay),
+        start_date: startDate,
       });
 
       setIsEditModalOpen(false);
@@ -255,7 +259,9 @@ export default function DebtsPage() {
                   <tr key={d.id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="py-3.5 px-4">
                       <span className="font-bold text-slate-900 block">{d.creditor_name}</span>
-                      <span className="text-[10px] text-slate-400">Vencimento: dia {d.due_day}</span>
+                      <span className="text-[10px] text-slate-400">
+                        {d.start_date ? `Início: ${d.start_date} • ` : ""}Vencimento: dia {d.due_day}
+                      </span>
                     </td>
                     <td className="py-3.5 px-4 font-mono font-bold text-red-600">
                       {d.monthly_interest_rate_percentage}% a.m.
@@ -639,16 +645,28 @@ export default function DebtsPage() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Dia do Vencimento</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="31"
-                    value={dueDay}
-                    onChange={(e) => setDueDay(e.target.value)}
-                    className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs"
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Data de Início / Contratação</label>
+                    <input
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      required
+                      className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Dia do Vencimento</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="31"
+                      value={dueDay}
+                      onChange={(e) => setDueDay(e.target.value)}
+                      className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-mono"
+                    />
+                  </div>
                 </div>
 
                 <button
