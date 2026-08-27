@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React from "react";
 import Link from "next/link";
@@ -16,6 +16,7 @@ import {
   ChevronRight
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { APP_VERSION, BUILD_ID, COMMIT_HASH } from "@/lib/version";
 
 export const Sidebar: React.FC = () => {
   const pathname = usePathname();
@@ -92,11 +93,18 @@ export const Sidebar: React.FC = () => {
         </nav>
       </div>
 
-      {/* Footer Status */}
-      <div className="p-4 border-t border-slate-800/80 text-xs text-slate-500 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-          <span>KIVO v0.5 (Online)</span>
+      {/* Footer Status & Build */}
+      <div className="p-4 border-t border-slate-800/80 text-[11px] text-slate-500 space-y-1">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span className="text-slate-300 font-semibold">KIVO v{APP_VERSION}</span>
+          </div>
+          <span className="text-emerald-400 font-bold text-[10px] uppercase">Online</span>
+        </div>
+        <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono pt-0.5">
+          <span>Build: {BUILD_ID}</span>
+          <span className="text-slate-400">#{COMMIT_HASH}</span>
         </div>
       </div>
     </aside>
