@@ -1,0 +1,83 @@
+﻿version: '3.8'
+
+services:
+  # 1. Banco de Dados Relacional
+  postgres:
+    image: postgres:16-alpine
+    container_name: kivo_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-kivo_db}
+      POSTGRES_USER: ${POSTGRES_USER:-kivo_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kivo_secret_local}
+    ports:
+      - "5432:5432"
+    volumes:
+      - kivo_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kivo_admin} -d ${POSTGRES_DB:-kivo_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. Camada de Cache e Sessões
+  redis:
+    image: redis:7-alpine
+    container_name: kivo_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - kivo_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 3. Backend API (FastAPI)
+  api:
+    build:
+      context: ./kivo-backend
+      dockerfile: Dockerfile
+    container_name: kivo_api
+    restart: unless-stopped
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./kivo-backend:/app
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-kivo_admin}:${POSTGRES_PASSWORD:-kivo_secret_local}@postgres:5432/${POSTGRES_DB:-kivo_db}
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-kivo_super_secret_jwt_key_dev_2026}
+      ENVIRONMENT: dev
+      CORS_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # 4. Frontend Web App (Next.js 15)
+  web:
+    build:
+      context: ./kivo-frontend
+      dockerfile: Dockerfile
+    container_name: kivo_web
+    restart: unless-stopped
+    command: npm run dev
+    volumes:
+      - ./kivo-frontend:/app
+      - /app/node_modules
+      - /app/.next
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+    depends_on:
+      - api
+
+volumes:
+  kivo_postgres_data:
+  kivo_redis_data:
