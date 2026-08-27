@@ -1,0 +1,32 @@
+﻿# Ambientes virtuais e Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+*.egg-info/
+.pytest_cache/
+
+# Node.js e Frontend
+node_modules/
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Banco de dados e Docker
+postgres_data/
+*.sqlite3
+*.db
+
+# Logs e arquivos temporários
+*.log
+.DS_Store
+Thumbs.db
+scripts/__pycache__/
