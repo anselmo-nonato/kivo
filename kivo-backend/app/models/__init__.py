@@ -1,4 +1,4 @@
-﻿import uuid
+import uuid
 from datetime import datetime, timezone
 from sqlalchemy import Column, DateTime, String, Boolean, ForeignKey, Numeric, Integer, Date, Text, Enum as SQLEnum, Table
 from sqlalchemy.dialects.postgresql import UUID
@@ -208,6 +208,7 @@ class Transaction(Base):
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     workspace = relationship("Workspace", back_populates="transactions")
+    category = relationship("Category")
     tags = relationship("Tag", secondary=transaction_tags, back_populates="transactions")
 
 
@@ -255,3 +256,5 @@ class BudgetLimit(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     workspace = relationship("Workspace", back_populates="budget_limits")
+    category = relationship("Category")
+    cost_center = relationship("CostCenter")
