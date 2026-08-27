@@ -421,7 +421,7 @@ async def create_transaction(
 @router.get("/{workspace_id}/summary", response_model=MonthlyFinancialSummary, summary="Resumo Financeiro Mensal")
 async def get_monthly_summary(
     workspace_id: UUID,
-    month: str = Query(..., regex=r"^\d{4}-\d{2}$", description="Formato YYYY-MM"),
+    month: str = Query(..., pattern=r"^\d{4}-\d{2}$", description="Formato YYYY-MM"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
