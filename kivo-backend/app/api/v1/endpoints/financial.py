@@ -418,6 +418,79 @@ async def create_transaction(
     return [build_tx_response(tx, tags=selected_tags) for tx in created_txs]
 
 
+@router.put("/{workspace_id}/transactions/{transaction_id}", response_model=TransactionResponse, summary="Atualizar Transação")
+async def update_transaction(
+    workspace_id: UUID,
+    transaction_id: UUID,
+    req: TransactionUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    await get_workspace_membership(workspace_id, current_user.id, db)
+
+    stmt = select(Transaction).where(
+        Transaction.id == transaction_id,
+        Transaction.workspace_id == workspace_id
+    ).options(selectinload(Transaction.tags))
+    tx = (await db.execute(stmt)).scalar_one_or_none()
+    if not tx:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transação não encontrada.")
+
+    if req.account_id is not None:
+        tx.account_id = req.account_id
+    if req.paid_by_member_id is not None:
+        tx.paid_by_member_id = req.paid_by_member_id
+    if req.cost_center_id is not None:
+        tx.cost_center_id = req.cost_center_id
+    if req.category_id is not None:
+        tx.category_id = req.category_id
+    if req.amount is not None:
+        tx.amount = req.amount
+    if req.type is not None:
+        tx.type = req.type
+    if req.essentiality is not None:
+        tx.essentiality = req.essentiality
+    if req.transaction_date is not None:
+        tx.transaction_date = req.transaction_date
+    if req.status is not None:
+        tx.status = req.status
+    if req.description is not None:
+        tx.description = req.description.strip()
+    if req.notes is not None:
+        tx.notes = req.notes
+
+    if req.tag_ids is not None:
+        stmt_tags = select(Tag).where(Tag.id.in_(req.tag_ids), Tag.workspace_id == workspace_id)
+        selected_tags = (await db.execute(stmt_tags)).scalars().all()
+        tx.tags = list(selected_tags)
+
+    await db.commit()
+    await db.refresh(tx)
+    return build_tx_response(tx, tags=tx.tags)
+
+
+@router.delete("/{workspace_id}/transactions/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Excluir Transação")
+async def delete_transaction(
+    workspace_id: UUID,
+    transaction_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    await get_workspace_membership(workspace_id, current_user.id, db)
+
+    stmt = select(Transaction).where(
+        Transaction.id == transaction_id,
+        Transaction.workspace_id == workspace_id
+    )
+    tx = (await db.execute(stmt)).scalar_one_or_none()
+    if not tx:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transação não encontrada.")
+
+    await db.delete(tx)
+    await db.commit()
+    return None
+
+
 @router.get("/{workspace_id}/summary", response_model=MonthlyFinancialSummary, summary="Resumo Financeiro Mensal")
 async def get_monthly_summary(
     workspace_id: UUID,

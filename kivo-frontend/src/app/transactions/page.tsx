@@ -16,7 +16,9 @@ import {
   X,
   AlertCircle,
   TrendingUp,
-  TrendingDown
+  TrendingDown,
+  Pencil,
+  Trash2
 } from "lucide-react";
 
 export default function TransactionsPage() {
@@ -34,8 +36,11 @@ export default function TransactionsPage() {
   const [selectedTagFilter, setSelectedTagFilter] = useState("");
   const [selectedTypeFilter, setSelectedTypeFilter] = useState("");
 
-  // Modal Novo Lançamento
+  // Modal Novo / Editar Lançamento
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [selectedTxId, setSelectedTxId] = useState<string | null>(null);
+
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [type, setType] = useState("expense");
@@ -101,24 +106,75 @@ export default function TransactionsPage() {
     }
   };
 
-  const handleCreateTransaction = async (e: React.FormEvent) => {
+  const handleOpenCreate = () => {
+    setIsEditMode(false);
+    setSelectedTxId(null);
+    setDescription("");
+    setAmount("");
+    setTotalInstallments("1");
+    setSelectedTagIds([]);
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEdit = (tx: any) => {
+    setIsEditMode(true);
+    setSelectedTxId(tx.id);
+    setDescription(tx.description);
+    setAmount(tx.amount);
+    setType(tx.type);
+    setEssentiality(tx.essentiality);
+    setTransactionDate(tx.transaction_date);
+    setAccountId(tx.account_id);
+    setPaidByMemberId(tx.paid_by_member_id);
+    setCostCenterId(tx.cost_center_id);
+    setCategoryId(tx.category_id);
+    setSelectedTagIds(tx.tags?.map((t: any) => t.id) || []);
+    setIsModalOpen(true);
+  };
+
+  const handleDeleteTransaction = async (txId: string) => {
+    if (!confirm("Tem certeza que deseja excluir esta transação?")) return;
+    try {
+      await api.delete(`/workspaces/${activeWorkspace?.id}/transactions/${txId}`);
+      loadData();
+    } catch (err) {
+      console.error("Erro ao excluir transação:", err);
+    }
+  };
+
+  const handleSaveTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
     try {
-      await api.post(`/workspaces/${activeWorkspace?.id}/transactions`, {
-        description: description.trim(),
-        amount: parseFloat(amount),
-        type,
-        essentiality,
-        transaction_date: transactionDate,
-        account_id: accountId,
-        paid_by_member_id: paidByMemberId,
-        cost_center_id: costCenterId,
-        category_id: categoryId,
-        total_installments: parseInt(totalInstallments) || 1,
-        tag_ids: selectedTagIds,
-      });
+      if (isEditMode && selectedTxId) {
+        await api.put(`/workspaces/${activeWorkspace?.id}/transactions/${selectedTxId}`, {
+          description: description.trim(),
+          amount: parseFloat(amount),
+          type,
+          essentiality,
+          transaction_date: transactionDate,
+          account_id: accountId,
+          paid_by_member_id: paidByMemberId,
+          cost_center_id: costCenterId,
+          category_id: categoryId,
+          tag_ids: selectedTagIds,
+        });
+      } else {
+        await api.post(`/workspaces/${activeWorkspace?.id}/transactions`, {
+          description: description.trim(),
+          amount: parseFloat(amount),
+          type,
+          essentiality,
+          transaction_date: transactionDate,
+          account_id: accountId,
+          paid_by_member_id: paidByMemberId,
+          cost_center_id: costCenterId,
+          category_id: categoryId,
+          total_installments: parseInt(totalInstallments) || 1,
+          tag_ids: selectedTagIds,
+        });
+      }
 
       setIsModalOpen(false);
       setDescription("");
@@ -127,7 +183,7 @@ export default function TransactionsPage() {
       setSelectedTagIds([]);
       loadData();
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Erro ao registrar lançamento.");
+      setError(err.response?.data?.detail || "Erro ao salvar lançamento.");
     }
   };
 
@@ -145,10 +201,10 @@ export default function TransactionsPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-extrabold text-slate-900">Extrato & Lançamentos</h1>
-            <p className="text-xs text-slate-500">Histórico detalhado com taxonomia 4D, parcelamento e tags</p>
+            <p className="text-xs text-slate-500">Histórico detalhado com filtros, edição e parcelamento</p>
           </div>
           <button
-            onClick={() => setIsModalOpen(true)}
+            onClick={handleOpenCreate}
             className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md shadow-emerald-500/20 flex items-center gap-2 transition-colors cursor-pointer"
           >
             <Plus className="w-4 h-4" />
@@ -206,6 +262,7 @@ export default function TransactionsPage() {
                   <th className="py-3.5 px-4">Essencialidade</th>
                   <th className="py-3.5 px-4">Parcela</th>
                   <th className="py-3.5 px-4 text-right">Valor</th>
+                  <th className="py-3.5 px-4 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
@@ -241,6 +298,8 @@ export default function TransactionsPage() {
                               ? "bg-emerald-100 text-emerald-800"
                               : tx.essentiality === "waste"
                               ? "bg-red-100 text-red-800"
+                              : tx.essentiality === "debt"
+                              ? "bg-amber-100 text-amber-800"
                               : "bg-blue-100 text-blue-800"
                           }`}
                         >
@@ -258,6 +317,24 @@ export default function TransactionsPage() {
                         {isIncome ? "+" : "-"} R${" "}
                         {parseFloat(tx.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                       </td>
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => handleOpenEdit(tx)}
+                            className="p-1 rounded-md hover:bg-slate-100 text-slate-400 hover:text-slate-700"
+                            title="Editar Transação"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteTransaction(tx.id)}
+                            className="p-1 rounded-md hover:bg-red-50 text-slate-400 hover:text-red-600"
+                            title="Excluir Transação"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
@@ -266,7 +343,7 @@ export default function TransactionsPage() {
           </div>
         </div>
 
-        {/* Modal de Novo Lançamento */}
+        {/* Modal de Novo / Editar Lançamento */}
         {isModalOpen && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
             <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-5 relative max-h-[90vh] overflow-y-auto">
@@ -277,7 +354,9 @@ export default function TransactionsPage() {
                 <X className="w-5 h-5" />
               </button>
 
-              <h2 className="text-lg font-bold text-slate-900">Novo Lançamento Financeiro</h2>
+              <h2 className="text-lg font-bold text-slate-900">
+                {isEditMode ? "Editar Lançamento" : "Novo Lançamento Financeiro"}
+              </h2>
 
               {error && (
                 <div className="p-3 rounded-xl bg-red-50 text-red-700 text-xs font-semibold flex items-center gap-2">
@@ -286,7 +365,7 @@ export default function TransactionsPage() {
                 </div>
               )}
 
-              <form onSubmit={handleCreateTransaction} className="space-y-4">
+              <form onSubmit={handleSaveTransaction} className="space-y-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Descrição</label>
                   <input
@@ -414,18 +493,20 @@ export default function TransactionsPage() {
                   </div>
                 </div>
 
-                {/* Parcelamento */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Parcelamento (1x a 120x)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="120"
-                    value={totalInstallments}
-                    onChange={(e) => setTotalInstallments(e.target.value)}
-                    className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-mono"
-                  />
-                </div>
+                {/* Parcelamento (apenas no modo criação) */}
+                {!isEditMode && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Parcelamento (1x a 120x)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="120"
+                      value={totalInstallments}
+                      onChange={(e) => setTotalInstallments(e.target.value)}
+                      className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-mono"
+                    />
+                  </div>
+                )}
 
                 {/* Campo Dedicado de Tags */}
                 <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
@@ -478,7 +559,7 @@ export default function TransactionsPage() {
                   type="submit"
                   className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md shadow-emerald-500/20 transition-colors cursor-pointer"
                 >
-                  Salvar Lançamento
+                  {isEditMode ? "Salvar Alterações" : "Salvar Lançamento"}
                 </button>
               </form>
             </div>

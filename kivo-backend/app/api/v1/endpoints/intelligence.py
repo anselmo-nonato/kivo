@@ -31,6 +31,7 @@ from app.schemas.intelligence import (
     EqualizationSettleRequest,
     DebtCreateRequest,
     DebtUpdateRequest,
+    DebtPayInstallmentRequest,
     DebtAmortizationRequest,
     DebtResponse,
     DebtSimulationResponse,
@@ -240,6 +241,116 @@ async def amortize_debt(
         # Reduz parcela mantendo prazo
         if debt.remaining_installments > 0 and new_balance > 0:
             debt.installment_amount = round(new_balance / Decimal(str(debt.remaining_installments)), 2)
+
+    await db.commit()
+    await db.refresh(debt)
+    return build_debt_response(debt)
+
+
+@router.put("/{workspace_id}/debts/{debt_id}", response_model=DebtResponse, summary="Atualizar Dívida / Contrato")
+async def update_debt(
+    workspace_id: UUID,
+    debt_id: UUID,
+    req: DebtUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    await get_workspace_membership(workspace_id, current_user.id, db)
+
+    stmt = select(Debt).where(Debt.id == debt_id, Debt.workspace_id == workspace_id)
+    debt = (await db.execute(stmt)).scalar_one_or_none()
+    if not debt:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dívida não encontrada.")
+
+    if req.creditor_name is not None:
+        debt.creditor_name = req.creditor_name.strip()
+    if req.original_amount is not None:
+        debt.original_amount = req.original_amount
+    if req.current_balance is not None:
+        debt.current_balance = req.current_balance
+    if req.monthly_interest_rate is not None:
+        debt.monthly_interest_rate = req.monthly_interest_rate
+    if req.installment_amount is not None:
+        debt.installment_amount = req.installment_amount
+    if req.remaining_installments is not None:
+        debt.remaining_installments = req.remaining_installments
+    if req.due_day is not None:
+        debt.due_day = req.due_day
+
+    await db.commit()
+    await db.refresh(debt)
+    return build_debt_response(debt)
+
+
+@router.delete("/{workspace_id}/debts/{debt_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Excluir Dívida")
+async def delete_debt(
+    workspace_id: UUID,
+    debt_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    await get_workspace_membership(workspace_id, current_user.id, db)
+
+    stmt = select(Debt).where(Debt.id == debt_id, Debt.workspace_id == workspace_id)
+    debt = (await db.execute(stmt)).scalar_one_or_none()
+    if not debt:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dívida não encontrada.")
+
+    await db.delete(debt)
+    await db.commit()
+    return None
+
+
+@router.post("/{workspace_id}/debts/{debt_id}/pay-installment", response_model=DebtResponse, summary="Pagar Parcela Mensal de Dívida")
+async def pay_debt_installment(
+    workspace_id: UUID,
+    debt_id: UUID,
+    req: DebtPayInstallmentRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    await get_workspace_membership(workspace_id, current_user.id, db)
+
+    stmt = select(Debt).where(Debt.id == debt_id, Debt.workspace_id == workspace_id)
+    debt = (await db.execute(stmt)).scalar_one_or_none()
+    if not debt:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dívida não encontrada.")
+
+    pay_amount = req.amount if req.amount is not None else debt.installment_amount
+    pay_date = req.payment_date or date.today()
+
+    # 1. Carrega ou busca Centro de Custo e Categoria de Dívidas padrão
+    stmt_cat = select(Category).where(Category.workspace_id == workspace_id, Category.name.ilike("%Dívida%"))
+    cat = (await db.execute(stmt_cat)).scalars().first()
+    if not cat:
+        stmt_any_cat = select(Category).where(Category.workspace_id == workspace_id)
+        cat = (await db.execute(stmt_any_cat)).scalars().first()
+
+    stmt_cc = select(CostCenter).where(CostCenter.workspace_id == workspace_id)
+    cc = (await db.execute(stmt_cc)).scalars().first()
+
+    # 2. Cria transação de débito no extrato
+    tx = Transaction(
+        id=uuid.uuid4(),
+        workspace_id=workspace_id,
+        account_id=req.account_id,
+        paid_by_member_id=debt.member_id,
+        cost_center_id=cc.id if cc else None,
+        category_id=cat.id if cat else None,
+        amount=pay_amount,
+        type=TransactionType.DEBT_PAYMENT,
+        essentiality=EssentialityGrade.DEBT,
+        transaction_date=pay_date,
+        description=f"Pagamento Parcela Dívida - {debt.creditor_name}",
+        status=TransactionStatus.PAID,
+        installment_current=1,
+        installment_total=1
+    )
+    db.add(tx)
+
+    # 3. Abate do saldo e do prazo
+    debt.current_balance = max(Decimal("0.00"), debt.current_balance - pay_amount)
+    debt.remaining_installments = max(0, debt.remaining_installments - 1)
 
     await db.commit()
     await db.refresh(debt)

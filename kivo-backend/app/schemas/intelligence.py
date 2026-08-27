@@ -47,11 +47,17 @@ class DebtCreateRequest(BaseModel):
 
 class DebtUpdateRequest(BaseModel):
     creditor_name: Optional[str] = Field(None, min_length=2, max_length=150)
+    original_amount: Optional[Decimal] = Field(None, gt=0)
     current_balance: Optional[Decimal] = Field(None, ge=0)
     monthly_interest_rate: Optional[Decimal] = Field(None, ge=0, le=1)
     installment_amount: Optional[Decimal] = Field(None, gt=0)
     remaining_installments: Optional[int] = Field(None, ge=0)
     due_day: Optional[int] = Field(None, ge=1, le=31)
+
+class DebtPayInstallmentRequest(BaseModel):
+    account_id: UUID
+    amount: Optional[Decimal] = Field(None, gt=0)
+    payment_date: Optional[date] = None
 
 class DebtAmortizationRequest(BaseModel):
     extra_amount: Decimal = Field(..., gt=0)
