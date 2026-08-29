@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
@@ -12,12 +12,30 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
   const { user, isLoading } = useAuth();
   const router = useRouter();
   const [is2FAModalOpen, setIs2FAModalOpen] = useState(false);
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   useEffect(() => {
     if (!isLoading && !user) {
       router.push("/login");
     }
   }, [user, isLoading, router]);
+
+  useEffect(() => {
+    // Carrega preferência do usuário do menu recolhido
+    const saved = localStorage.getItem("kivo_sidebar_collapsed");
+    if (saved !== null) {
+      setIsCollapsed(saved === "true");
+    }
+  }, []);
+
+  const handleToggleCollapse = () => {
+    setIsCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem("kivo_sidebar_collapsed", String(next));
+      return next;
+    });
+  };
 
   if (isLoading || !user) {
     return (
@@ -31,11 +49,24 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
   }
 
   return (
-    <div className="min-h-screen flex bg-slate-50">
-      <Sidebar />
+    <div className="min-h-screen flex bg-slate-50 overflow-x-hidden">
+      {/* Sidebar Desktop e Gaveta Mobile */}
+      <Sidebar
+        isCollapsed={isCollapsed}
+        onToggleCollapse={handleToggleCollapse}
+        isMobileOpen={isMobileOpen}
+        onCloseMobile={() => setIsMobileOpen(false)}
+      />
+
+      {/* Conteúdo Principal */}
       <div className="flex-1 flex flex-col min-w-0">
-        <Header onOpen2FAModal={() => setIs2FAModalOpen(true)} />
-        <main className="p-6 md:p-8 max-w-7xl w-full mx-auto flex-1">
+        <Header
+          onOpen2FAModal={() => setIs2FAModalOpen(true)}
+          onToggleMobile={() => setIsMobileOpen(!isMobileOpen)}
+          isCollapsed={isCollapsed}
+          onToggleCollapse={handleToggleCollapse}
+        />
+        <main className="p-4 sm:p-6 md:p-8 max-w-7xl w-full mx-auto flex-1 min-w-0">
           {children}
         </main>
       </div>
