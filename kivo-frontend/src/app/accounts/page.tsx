@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import { AppLayout } from "@/components/AppLayout";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
@@ -17,7 +18,8 @@ import {
   Settings2,
   Sparkles,
   Layers,
-  Landmark
+  Landmark,
+  ReceiptText
 } from "lucide-react";
 
 export default function AccountsPage() {
@@ -322,14 +324,23 @@ export default function AccountsPage() {
                       </div>
                     </div>
 
-                    {/* Botão de Pagar Fatura */}
-                    <button
-                      onClick={() => openPayInvoiceModal(card)}
-                      className="w-full mt-2 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-md shadow-purple-500/20 flex items-center justify-center gap-2 transition-colors cursor-pointer"
-                    >
-                      <ArrowRightLeft className="w-4 h-4" />
-                      <span>Pagar Fatura do Cartão</span>
-                    </button>
+                    {/* Botões de Fatura e Pagamento */}
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                      <Link
+                        href={`/transactions?account_id=${card.id}`}
+                        className="py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
+                      >
+                        <ReceiptText className="w-3.5 h-3.5 text-purple-600" />
+                        <span>Ver Fatura</span>
+                      </Link>
+                      <button
+                        onClick={() => openPayInvoiceModal(card)}
+                        className="py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-md shadow-purple-500/20 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <ArrowRightLeft className="w-3.5 h-3.5" />
+                        <span>Pagar Fatura</span>
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -397,10 +408,19 @@ export default function AccountsPage() {
                   </div>
 
                   <div className="pt-3 border-t border-slate-100 text-xs text-slate-500 flex justify-between items-center">
-                    <span>Saldo Inicial:</span>
-                    <span className="font-bold text-slate-700">
-                      R$ {parseFloat(acc.initial_balance || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                    </span>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block uppercase font-semibold">Saldo Inicial</span>
+                      <span className="font-bold text-slate-700">
+                        R$ {parseFloat(acc.initial_balance || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <Link
+                      href={`/transactions?account_id=${acc.id}`}
+                      className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center gap-1.5 transition-colors"
+                    >
+                      <ReceiptText className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Ver Extrato</span>
+                    </Link>
                   </div>
                 </div>
               );

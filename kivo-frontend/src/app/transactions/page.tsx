@@ -37,9 +37,20 @@ export default function TransactionsPage() {
 
   // Filtros
   const [search, setSearch] = useState("");
+  const [selectedAccountFilter, setSelectedAccountFilter] = useState("");
   const [selectedTagFilter, setSelectedTagFilter] = useState("");
   const [selectedTypeFilter, setSelectedTypeFilter] = useState("");
   const [selectedStatusFilter, setSelectedStatusFilter] = useState("");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const accParam = params.get("account_id");
+      if (accParam) {
+        setSelectedAccountFilter(accParam);
+      }
+    }
+  }, []);
 
   // Modal Novo / Editar Lançamento
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -215,7 +226,8 @@ export default function TransactionsPage() {
     const matchType = !selectedTypeFilter || tx.type === selectedTypeFilter;
     const matchStatus = !selectedStatusFilter || tx.status === selectedStatusFilter;
     const matchTag = !selectedTagFilter || tx.tags?.some((t: any) => t.id === selectedTagFilter);
-    return matchSearch && matchType && matchStatus && matchTag;
+    const matchAccount = !selectedAccountFilter || tx.account_id === selectedAccountFilter;
+    return matchSearch && matchType && matchStatus && matchTag && matchAccount;
   });
 
   return (
@@ -224,7 +236,7 @@ export default function TransactionsPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-extrabold text-slate-900">Extrato, Recebíveis & Despesas</h1>
-            <p className="text-xs text-slate-500">Histórico de lançamentos, receitas avulsas, recebíveis futuros e filtros</p>
+            <p className="text-xs text-slate-500">Histórico de lançamentos, faturas de cartões, receitas avulsas e filtros</p>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -256,6 +268,33 @@ export default function TransactionsPage() {
               className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-emerald-500"
             />
           </div>
+
+          {/* Filtro por Conta / Cartão */}
+          <select
+            value={selectedAccountFilter}
+            onChange={(e) => setSelectedAccountFilter(e.target.value)}
+            className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white"
+          >
+            <option value="">Todas as Contas & Cartões</option>
+            <optgroup label="Cartões de Crédito">
+              {accounts
+                .filter((a) => a.type === "credit_card")
+                .map((a) => (
+                  <option key={a.id} value={a.id}>
+                    💳 {a.name}
+                  </option>
+                ))}
+            </optgroup>
+            <optgroup label="Contas Bancárias & Carteiras">
+              {accounts
+                .filter((a) => a.type !== "credit_card")
+                .map((a) => (
+                  <option key={a.id} value={a.id}>
+                    🏦 {a.name}
+                  </option>
+                ))}
+            </optgroup>
+          </select>
 
           <select
             value={selectedTypeFilter}
