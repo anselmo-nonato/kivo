@@ -23,10 +23,19 @@ class AccountCreateRequest(BaseModel):
 
 class AccountUpdateRequest(BaseModel):
     name: Optional[str] = Field(None, min_length=2, max_length=100)
+    initial_balance: Optional[Decimal] = None
     credit_limit: Optional[Decimal] = Field(None, ge=0)
+    adjusted_available_limit: Optional[Decimal] = Field(None, ge=0)
     closing_day: Optional[int] = Field(None, ge=1, le=31)
     due_day: Optional[int] = Field(None, ge=1, le=31)
     is_active: Optional[bool] = None
+
+class InvoicePaymentRequest(BaseModel):
+    source_account_id: UUID
+    amount: Decimal = Field(..., gt=0)
+    payment_date: Optional[date] = None
+    paid_by_member_id: Optional[UUID] = None
+    notes: Optional[str] = None
 
 class AccountResponse(BaseModel):
     id: UUID
@@ -37,6 +46,8 @@ class AccountResponse(BaseModel):
     initial_balance: Decimal
     current_balance: Decimal = Decimal("0.00")
     credit_limit: Optional[Decimal] = None
+    used_limit: Optional[Decimal] = None
+    available_limit: Optional[Decimal] = None
     closing_day: Optional[int] = None
     due_day: Optional[int] = None
     is_active: bool

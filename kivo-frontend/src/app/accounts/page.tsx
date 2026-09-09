@@ -1,19 +1,33 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
-import { CreditCard, Wallet, Plus, Building2, Calendar, X, AlertCircle } from "lucide-react";
+import {
+  CreditCard,
+  Wallet,
+  Plus,
+  Building2,
+  Calendar,
+  X,
+  AlertCircle,
+  CheckCircle2,
+  ArrowRightLeft,
+  Settings2,
+  Sparkles,
+  TrendingDown,
+  Lock
+} from "lucide-react";
 
 export default function AccountsPage() {
   const { activeWorkspace } = useAuth();
   const [accounts, setAccounts] = useState<any[]>([]);
   const [members, setMembers] = useState<any[]>([]);
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Formulário
+  // Modal de Criação
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [name, setName] = useState("");
   const [type, setType] = useState("checking");
   const [ownerMemberId, setOwnerMemberId] = useState("");
@@ -21,7 +35,25 @@ export default function AccountsPage() {
   const [creditLimit, setCreditLimit] = useState("");
   const [closingDay, setClosingDay] = useState("5");
   const [dueDay, setDueDay] = useState("12");
+
+  // Modal de Pagamento de Fatura
+  const [selectedCardForPayment, setSelectedCardForPayment] = useState<any | null>(null);
+  const [paymentSourceAccountId, setPaymentSourceAccountId] = useState("");
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
+  const [paymentNotes, setPaymentNotes] = useState("");
+
+  // Modal de Edição / Ajuste de Limite
+  const [selectedAccountForEdit, setSelectedAccountForEdit] = useState<any | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editCreditLimit, setEditCreditLimit] = useState("");
+  const [editAdjustedAvailableLimit, setEditAdjustedAvailableLimit] = useState("");
+  const [editClosingDay, setEditClosingDay] = useState("");
+  const [editDueDay, setEditDueDay] = useState("");
+  const [editInitialBalance, setEditInitialBalance] = useState("");
+
   const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
 
   const loadData = async () => {
     if (!activeWorkspace) return;
@@ -62,89 +94,558 @@ export default function AccountsPage() {
         due_day: type === "credit_card" ? parseInt(dueDay) : null,
       });
 
-      setIsModalOpen(false);
+      setIsCreateModalOpen(false);
       setName("");
       setInitialBalance("0.00");
       setCreditLimit("");
+      setSuccessMessage("Conta cadastrada com sucesso!");
+      setTimeout(() => setSuccessMessage(""), 4000);
       loadData();
     } catch (err: any) {
       setError(err.response?.data?.detail || "Erro ao criar conta.");
     }
   };
 
+  const openPayInvoiceModal = (card: any) => {
+    setSelectedCardForPayment(card);
+    const bankAccounts = accounts.filter((a) => a.type !== "credit_card" && a.id !== card.id);
+    if (bankAccounts.length > 0) {
+      setPaymentSourceAccountId(bankAccounts[0].id);
+    }
+    setPaymentAmount(card.used_limit ? parseFloat(card.used_limit).toFixed(2) : "0.00");
+    setPaymentDate(new Date().toISOString().slice(0, 10));
+    setPaymentNotes(`Pagamento Fatura ${card.name}`);
+    setError("");
+  };
+
+  const handlePayInvoice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (!selectedCardForPayment || !paymentSourceAccountId) return;
+
+    const amt = parseFloat(paymentAmount);
+    if (isNaN(amt) || amt <= 0) {
+      setError("Informe um valor de pagamento válido maior que zero.");
+      return;
+    }
+
+    try {
+      await api.post(`/workspaces/${activeWorkspace?.id}/accounts/${selectedCardForPayment.id}/pay-invoice`, {
+        source_account_id: paymentSourceAccountId,
+        amount: amt,
+        payment_date: paymentDate,
+        notes: paymentNotes.trim() || undefined,
+      });
+
+      setSelectedCardForPayment(null);
+      setSuccessMessage(`Fatura de R$ ${amt.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} paga com sucesso! Limite restaurado.`);
+      setTimeout(() => setSuccessMessage(""), 4000);
+      loadData();
+    } catch (err: any) {
+      setError(err.response?.data?.detail || "Erro ao processar pagamento de fatura.");
+    }
+  };
+
+  const openEditAccountModal = (acc: any) => {
+    setSelectedAccountForEdit(acc);
+    setEditName(acc.name);
+    setEditCreditLimit(acc.credit_limit ? String(acc.credit_limit) : "");
+    setEditAdjustedAvailableLimit(acc.available_limit ? String(acc.available_limit) : "");
+    setEditClosingDay(acc.closing_day ? String(acc.closing_day) : "5");
+    setEditDueDay(acc.due_day ? String(acc.due_day) : "12");
+    setEditInitialBalance(acc.initial_balance ? String(acc.initial_balance) : "0.00");
+    setError("");
+  };
+
+  const handleEditAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (!selectedAccountForEdit) return;
+
+    try {
+      const payload: any = {
+        name: editName.trim(),
+      };
+
+      if (selectedAccountForEdit.type === "credit_card") {
+        if (editCreditLimit) payload.credit_limit = parseFloat(editCreditLimit);
+        if (editClosingDay) payload.closing_day = parseInt(editClosingDay);
+        if (editDueDay) payload.due_day = parseInt(editDueDay);
+        if (editAdjustedAvailableLimit !== "") {
+          payload.adjusted_available_limit = parseFloat(editAdjustedAvailableLimit);
+        }
+      } else {
+        if (editInitialBalance !== "") {
+          payload.initial_balance = parseFloat(editInitialBalance);
+        }
+      }
+
+      await api.put(`/workspaces/${activeWorkspace?.id}/accounts/${selectedAccountForEdit.id}`, payload);
+      setSelectedAccountForEdit(null);
+      setSuccessMessage("Conta atualizada com sucesso!");
+      setTimeout(() => setSuccessMessage(""), 4000);
+      loadData();
+    } catch (err: any) {
+      setError(err.response?.data?.detail || "Erro ao atualizar conta.");
+    }
+  };
+
+  const bankAccounts = accounts.filter((a) => a.type !== "credit_card");
+  const creditCards = accounts.filter((a) => a.type === "credit_card");
+
   return (
     <AppLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        {/* Notificação de Sucesso */}
+        {successMessage && (
+          <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-semibold flex items-center gap-2.5 animate-in fade-in">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+            <span>{successMessage}</span>
+          </div>
+        )}
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-extrabold text-slate-900">Contas Bancárias & Cartões</h1>
-            <p className="text-xs text-slate-500">Gerencie todos os seus bancos, carteiras e cartões de crédito</p>
+            <p className="text-xs text-slate-500">
+              Acompanhe saldos reais, limites disponíveis e pagamentos de faturas
+            </p>
           </div>
           <button
-            onClick={() => setIsModalOpen(true)}
-            className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md shadow-emerald-500/20 flex items-center gap-2 transition-colors cursor-pointer"
+            onClick={() => {
+              setIsCreateModalOpen(true);
+              setError("");
+            }}
+            className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md shadow-emerald-500/20 flex items-center justify-center gap-2 transition-colors cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>Adicionar Conta / Cartão</span>
           </button>
         </div>
 
-        {/* Grid de Contas */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {accounts.map((acc) => (
-            <div key={acc.id} className="p-6 rounded-3xl bg-white border border-slate-200 shadow-xs space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 rounded-2xl bg-slate-100 text-slate-700 flex items-center justify-center">
-                    {acc.type === "credit_card" ? (
-                      <CreditCard className="w-5 h-5 text-purple-600" />
-                    ) : (
-                      <Wallet className="w-5 h-5 text-emerald-600" />
-                    )}
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-slate-900 text-base">{acc.name}</h3>
-                    <span className="text-[10px] uppercase font-bold text-slate-400">
-                      {acc.type === "checking" ? "Conta Corrente" : acc.type === "credit_card" ? "Cartão de Crédito" : "Carteira"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <span className="text-xs text-slate-400 font-semibold block">Saldo em Tempo Real</span>
-                <div className="text-2xl font-extrabold text-slate-900 mt-0.5">
-                  R$ {parseFloat(acc.current_balance || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                </div>
-              </div>
-
-              {acc.type === "credit_card" && (
-                <div className="pt-3 border-t border-slate-100 text-xs text-slate-500 space-y-1">
-                  <div className="flex justify-between">
-                    <span>Limite Total:</span>
-                    <span className="font-bold text-slate-700">
-                      R$ {parseFloat(acc.credit_limit || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Fechamento / Vencimento:</span>
-                    <span className="font-bold text-slate-700">
-                      Dia {acc.closing_day} / Dia {acc.due_day}
-                    </span>
-                  </div>
-                </div>
-              )}
+        {/* SEÇÃO 1: CARTÕES DE CRÉDITO */}
+        {creditCards.length > 0 && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <CreditCard className="w-4 h-4 text-purple-600" />
+              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-600">Cartões de Crédito</h2>
             </div>
-          ))}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {creditCards.map((card) => {
+                const totalLimit = parseFloat(card.credit_limit || 0);
+                const usedLimit = parseFloat(card.used_limit || 0);
+                const availableLimit = parseFloat(card.available_limit || 0);
+                const usedPercentage = totalLimit > 0 ? Math.min(100, Math.round((usedLimit / totalLimit) * 100)) : 0;
+
+                // Cores dinâmicas de uso
+                let progressColor = "bg-emerald-500";
+                let badgeColor = "text-emerald-700 bg-emerald-50 border-emerald-200";
+                if (usedPercentage > 80) {
+                  progressColor = "bg-red-500";
+                  badgeColor = "text-red-700 bg-red-50 border-red-200";
+                } else if (usedPercentage > 50) {
+                  progressColor = "bg-amber-500";
+                  badgeColor = "text-amber-700 bg-amber-50 border-amber-200";
+                }
+
+                return (
+                  <div
+                    key={card.id}
+                    className="p-6 rounded-3xl bg-white border border-purple-100 shadow-xs space-y-4 relative overflow-hidden"
+                  >
+                    {/* Barra de destaque superior roxa */}
+                    <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-purple-500 to-indigo-600" />
+
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-10 h-10 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center">
+                          <CreditCard className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-slate-900 text-base">{card.name}</h3>
+                          <span className="text-[10px] uppercase font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-100">
+                            Cartão de Crédito
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => openEditAccountModal(card)}
+                        className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                        title="Ajustar Limite / Configurações"
+                      >
+                        <Settings2 className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {/* Destaque: Limite Disponível */}
+                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
+                      <span className="text-xs text-slate-500 font-semibold block">Limite Disponível</span>
+                      <div className="text-2xl font-extrabold text-emerald-600">
+                        R$ {availableLimit.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+
+                    {/* Barra de Progresso do Limite */}
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between text-xs font-semibold">
+                        <span className="text-slate-500">Limite Utilizado ({usedPercentage}%)</span>
+                        <span className="text-slate-700 font-mono">
+                          R$ {usedLimit.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                      <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full ${progressColor} transition-all duration-500 rounded-full`}
+                          style={{ width: `${usedPercentage}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Detalhes de Limite Total & Fatura */}
+                    <div className="pt-2 border-t border-slate-100 text-xs text-slate-500 space-y-1.5">
+                      <div className="flex justify-between">
+                        <span>Limite Total:</span>
+                        <span className="font-bold text-slate-800 font-mono">
+                          R$ {totalLimit.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Fechamento / Vencimento:</span>
+                        <span className="font-bold text-slate-800">
+                          Dia {card.closing_day || 5} • Dia {card.due_day || 12}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Botão de Pagar Fatura */}
+                    <button
+                      onClick={() => openPayInvoiceModal(card)}
+                      className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-md shadow-purple-500/20 flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                    >
+                      <ArrowRightLeft className="w-4 h-4" />
+                      <span>Pagar Fatura do Cartão</span>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* SEÇÃO 2: CONTAS BANCÁRIAS, CARTEIRAS & INVESTIMENTOS */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Wallet className="w-4 h-4 text-emerald-600" />
+            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-600">
+              Contas Correntes, Carteiras & Investimentos
+            </h2>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {bankAccounts.map((acc) => (
+              <div key={acc.id} className="p-6 rounded-3xl bg-white border border-slate-200 shadow-xs space-y-4">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                      <Wallet className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-slate-900 text-base">{acc.name}</h3>
+                      <span className="text-[10px] uppercase font-bold text-slate-400">
+                        {acc.type === "checking"
+                          ? "Conta Corrente"
+                          : acc.type === "investment"
+                          ? "Investimentos"
+                          : "Carteira / Dinheiro"}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => openEditAccountModal(acc)}
+                    className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                    title="Editar Conta"
+                  >
+                    <Settings2 className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div>
+                  <span className="text-xs text-slate-400 font-semibold block">Saldo em Tempo Real</span>
+                  <div className="text-2xl font-extrabold text-slate-900 mt-0.5 font-mono">
+                    R$ {parseFloat(acc.current_balance || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-slate-100 text-xs text-slate-500 flex justify-between">
+                  <span>Saldo Inicial:</span>
+                  <span className="font-semibold text-slate-700 font-mono">
+                    R$ {parseFloat(acc.initial_balance || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
-        {/* Modal de Criação de Conta */}
-        {isModalOpen && (
+        {/* MODAL DE PAGAMENTO DE FATURA */}
+        {selectedCardForPayment && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
+            <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-5 relative">
+              <button
+                onClick={() => setSelectedCardForPayment(null)}
+                className="absolute top-5 right-5 p-2 rounded-full hover:bg-slate-100 text-slate-400 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center">
+                  <ArrowRightLeft className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">Pagar Fatura - {selectedCardForPayment.name}</h2>
+                  <p className="text-xs text-slate-500">Debita da conta bancária e restabelece o limite disponível</p>
+                </div>
+              </div>
+
+              {error && (
+                <div className="p-3 rounded-xl bg-red-50 text-red-700 text-xs font-semibold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              <form onSubmit={handlePayInvoice} className="space-y-4">
+                {/* Resumo Atual do Cartão */}
+                <div className="grid grid-cols-2 gap-3 p-3.5 rounded-2xl bg-purple-50/70 border border-purple-100 text-xs">
+                  <div>
+                    <span className="text-purple-700 font-semibold block">Limite Usado (Fatura):</span>
+                    <span className="text-base font-extrabold text-purple-950 font-mono">
+                      R$ {parseFloat(selectedCardForPayment.used_limit || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-purple-700 font-semibold block">Limite Total:</span>
+                    <span className="text-base font-extrabold text-slate-800 font-mono">
+                      R$ {parseFloat(selectedCardForPayment.credit_limit || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Seleção da Conta de Débito */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Conta de Débito (De onde sairá o dinheiro?)
+                  </label>
+                  <select
+                    value={paymentSourceAccountId}
+                    onChange={(e) => setPaymentSourceAccountId(e.target.value)}
+                    required
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-medium focus:ring-2 focus:ring-purple-500"
+                  >
+                    {bankAccounts.map((acc) => (
+                      <option key={acc.id} value={acc.id}>
+                        {acc.name} — Saldo: R$ {parseFloat(acc.current_balance || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Valor do Pagamento e Data */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Valor do Pagamento (R$)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={paymentAmount}
+                      onChange={(e) => setPaymentAmount(e.target.value)}
+                      required
+                      placeholder="0.00"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-mono font-bold text-slate-900 focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Data do Pagamento</label>
+                    <input
+                      type="date"
+                      value={paymentDate}
+                      onChange={(e) => setPaymentDate(e.target.value)}
+                      required
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Simulação do Novo Limite */}
+                {parseFloat(paymentAmount) > 0 && (
+                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 space-y-1">
+                    <div className="flex justify-between font-semibold">
+                      <span>Novo Limite Disponível Estimado:</span>
+                      <span className="font-extrabold text-sm text-emerald-700 font-mono">
+                        R${" "}
+                        {Math.min(
+                          parseFloat(selectedCardForPayment.credit_limit || 0),
+                          parseFloat(selectedCardForPayment.available_limit || 0) + parseFloat(paymentAmount || 0)
+                        ).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Observações (Opcional)</label>
+                  <input
+                    type="text"
+                    value={paymentNotes}
+                    onChange={(e) => setPaymentNotes(e.target.value)}
+                    placeholder="Ex: Pagamento integral fatura Setembro"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-sm shadow-md shadow-purple-500/20 transition-colors cursor-pointer"
+                >
+                  Confirmar Pagamento da Fatura
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL DE EDIÇÃO / AJUSTE DE LIMITE */}
+        {selectedAccountForEdit && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
             <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5 relative">
               <button
-                onClick={() => setIsModalOpen(false)}
-                className="absolute top-5 right-5 p-2 rounded-full hover:bg-slate-100 text-slate-400"
+                onClick={() => setSelectedAccountForEdit(null)}
+                className="absolute top-5 right-5 p-2 rounded-full hover:bg-slate-100 text-slate-400 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-slate-100 text-slate-700 flex items-center justify-center">
+                  <Settings2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">Configurar Conta / Limites</h2>
+                  <p className="text-xs text-slate-500">{selectedAccountForEdit.name}</p>
+                </div>
+              </div>
+
+              {error && (
+                <div className="p-3 rounded-xl bg-red-50 text-red-700 text-xs font-semibold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleEditAccount} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Nome da Conta / Cartão</label>
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    required
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+
+                {selectedAccountForEdit.type === "credit_card" ? (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-bold text-purple-900 mb-1">Limite Total do Cartão (R$)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={editCreditLimit}
+                        onChange={(e) => setEditCreditLimit(e.target.value)}
+                        placeholder="6200.00"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-purple-200 text-sm font-mono bg-purple-50/50"
+                      />
+                    </div>
+
+                    <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                        <Sparkles className="w-4 h-4 text-purple-600" />
+                        <span>Recalibrar Limite Disponível Atual</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 leading-relaxed">
+                        Se o limite disponível no aplicativo do banco for diferente do calculado, informe o valor exato
+                        abaixo para sincronizar perfeitamente:
+                      </p>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={editAdjustedAvailableLimit}
+                        onChange={(e) => setEditAdjustedAvailableLimit(e.target.value)}
+                        placeholder="Ex: 5800.00"
+                        className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-sm font-mono font-bold bg-white text-emerald-600"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">Dia Fechamento</label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="31"
+                          value={editClosingDay}
+                          onChange={(e) => setEditClosingDay(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">Dia Vencimento</label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="31"
+                          value={editDueDay}
+                          onChange={(e) => setEditDueDay(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Saldo Inicial (R$)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={editInitialBalance}
+                      onChange={(e) => setEditInitialBalance(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-mono"
+                    />
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md shadow-emerald-500/20 transition-colors cursor-pointer"
+                >
+                  Salvar Alterações
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL DE CRIAÇÃO DE CONTA */}
+        {isCreateModalOpen && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
+            <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5 relative">
+              <button
+                onClick={() => setIsCreateModalOpen(false)}
+                className="absolute top-5 right-5 p-2 rounded-full hover:bg-slate-100 text-slate-400 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -165,7 +666,7 @@ export default function AccountsPage() {
                     type="text"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="Ex: Nubank, Sicoob, Cartão XP..."
+                    placeholder="Ex: Nubank, Cartão Sicoob, XP..."
                     required
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-emerald-500"
                   />
@@ -202,28 +703,28 @@ export default function AccountsPage() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Saldo Inicial (R$)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={initialBalance}
-                    onChange={(e) => setInitialBalance(e.target.value)}
-                    placeholder="0.00"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-mono"
-                  />
-                </div>
-
-                {type === "credit_card" && (
+                {type === "credit_card" ? (
                   <div className="p-3.5 rounded-2xl bg-purple-50 border border-purple-100 space-y-3">
                     <div>
-                      <label className="block text-xs font-bold text-purple-900 mb-1">Limite do Cartão (R$)</label>
+                      <label className="block text-xs font-bold text-purple-900 mb-1">Limite Total do Cartão (R$)</label>
                       <input
                         type="number"
                         step="0.01"
                         value={creditLimit}
                         onChange={(e) => setCreditLimit(e.target.value)}
-                        placeholder="10000.00"
+                        placeholder="6200.00"
+                        required
+                        className="w-full px-3 py-2 rounded-xl border border-purple-200 text-sm bg-white font-mono font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-purple-900 mb-1">Fatura / Limite Já Utilizado Inicial (R$)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={initialBalance}
+                        onChange={(e) => setInitialBalance(e.target.value)}
+                        placeholder="0.00"
                         className="w-full px-3 py-2 rounded-xl border border-purple-200 text-sm bg-white font-mono"
                       />
                     </div>
@@ -252,11 +753,23 @@ export default function AccountsPage() {
                       </div>
                     </div>
                   </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Saldo Inicial (R$)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={initialBalance}
+                      onChange={(e) => setInitialBalance(e.target.value)}
+                      placeholder="0.00"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-mono"
+                    />
+                  </div>
                 )}
 
                 <button
                   type="submit"
-                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md shadow-emerald-500/20 transition-colors"
+                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md shadow-emerald-500/20 transition-colors cursor-pointer"
                 >
                   Salvar Conta
                 </button>
@@ -268,3 +781,4 @@ export default function AccountsPage() {
     </AppLayout>
   );
 }
+

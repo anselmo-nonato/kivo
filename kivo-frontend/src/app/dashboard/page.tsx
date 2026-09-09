@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
@@ -59,8 +59,10 @@ export default function DashboardPage() {
     loadDashboardData();
   }, [activeWorkspace]);
 
-  // Cálculos consolidados
-  const totalBalance = accounts.reduce((acc, a) => acc + parseFloat(a.current_balance || 0), 0);
+  // Cálculos consolidados (exclui cartões de crédito do saldo bancário líquido)
+  const totalBalance = accounts
+    .filter((a) => a.type !== "credit_card")
+    .reduce((acc, a) => acc + parseFloat(a.current_balance || 0), 0);
   const totalIncome = parseFloat(summary?.total_income || 0);
   const totalExpense = parseFloat(summary?.total_expense || 0);
   const netSavings = parseFloat(summary?.net_savings || 0);
@@ -279,23 +281,60 @@ export default function DashboardPage() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {accounts.map((acc) => (
-              <div key={acc.id} className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-2">
-                <div className="flex items-center justify-between text-xs text-slate-400 font-semibold">
-                  <span className="uppercase">{acc.type === "checking" ? "Conta Corrente" : acc.type === "credit_card" ? "Cartão de Crédito" : "Carteira"}</span>
-                  <CreditCard className="w-4 h-4 text-slate-400" />
-                </div>
-                <h4 className="font-bold text-slate-900 text-base">{acc.name}</h4>
-                <div className="text-xl font-extrabold text-slate-900">
-                  R$ {parseFloat(acc.current_balance || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                </div>
-                {acc.credit_limit && (
+            {accounts.map((acc) => {
+              if (acc.type === "credit_card") {
+                const totalLimit = parseFloat(acc.credit_limit || 0);
+                const usedLimit = parseFloat(acc.used_limit || 0);
+                const availableLimit = parseFloat(acc.available_limit || 0);
+                const usedPct = totalLimit > 0 ? Math.min(100, Math.round((usedLimit / totalLimit) * 100)) : 0;
+
+                return (
+                  <div key={acc.id} className="p-5 rounded-2xl bg-white border border-purple-100 shadow-xs space-y-2 relative overflow-hidden">
+                    <div className="absolute top-0 left-0 right-0 h-1 bg-purple-500" />
+                    <div className="flex items-center justify-between text-xs font-semibold">
+                      <span className="uppercase text-purple-600 font-bold">Cartão de Crédito</span>
+                      <CreditCard className="w-4 h-4 text-purple-600" />
+                    </div>
+                    <h4 className="font-bold text-slate-900 text-base">{acc.name}</h4>
+                    <div className="space-y-0.5">
+                      <span className="text-[10px] uppercase font-bold text-slate-400">Limite Disponível</span>
+                      <div className="text-xl font-extrabold text-emerald-600 font-mono">
+                        R$ {availableLimit.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+                    <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full ${usedPct > 80 ? "bg-red-500" : usedPct > 50 ? "bg-amber-500" : "bg-emerald-500"} rounded-full`}
+                        style={{ width: `${usedPct}%` }}
+                      />
+                    </div>
+                    <p className="text-[11px] text-slate-400 flex justify-between font-medium">
+                      <span>Fatura: R$ {usedLimit.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                      <span>Total: R$ {totalLimit.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                    </p>
+                  </div>
+                );
+              }
+
+              return (
+                <div key={acc.id} className="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-2">
+                  <div className="flex items-center justify-between text-xs text-slate-400 font-semibold">
+                    <span className="uppercase">{acc.type === "checking" ? "Conta Corrente" : acc.type === "investment" ? "Investimentos" : "Carteira"}</span>
+                    <Wallet className="w-4 h-4 text-slate-400" />
+                  </div>
+                  <h4 className="font-bold text-slate-900 text-base">{acc.name}</h4>
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] uppercase font-bold text-slate-400">Saldo em Conta</span>
+                    <div className="text-xl font-extrabold text-slate-900 font-mono">
+                      R$ {parseFloat(acc.current_balance || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                    </div>
+                  </div>
                   <p className="text-[11px] text-slate-400">
-                    Limite: R$ {parseFloat(acc.credit_limit).toLocaleString("pt-BR", { minimumFractionDigits: 2 })} • Venc: dia {acc.due_day}
+                    Conta ativa no espaço
                   </p>
-                )}
-              </div>
-            ))}
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>

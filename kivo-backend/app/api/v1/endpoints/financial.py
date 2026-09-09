@@ -16,7 +16,9 @@ from app.models import (
     Workspace,
     WorkspaceMember,
     Account,
+    AccountType,
     CostCenter,
+    CostCenterScope,
     Category,
     Tag,
     Transaction,
@@ -29,6 +31,7 @@ from app.models import (
 from app.schemas.financial import (
     AccountCreateRequest,
     AccountUpdateRequest,
+    InvoicePaymentRequest,
     AccountResponse,
     CostCenterCreateRequest,
     CostCenterResponse,
@@ -53,6 +56,76 @@ router = APIRouter()
 
 # ==================== 1. CONTAS BANCÁRIAS & CARTEIRAS ====================
 
+async def compute_account_details(acc: Account, db: AsyncSession) -> AccountResponse:
+    if acc.type == AccountType.CREDIT_CARD:
+        # 1. Total de despesas e parcelas ativas no cartão (consomem o limite)
+        stmt_exp = select(func.coalesce(func.sum(Transaction.amount), 0)).where(
+            Transaction.account_id == acc.id,
+            Transaction.type.in_([TransactionType.EXPENSE, TransactionType.DEBT_PAYMENT])
+        )
+        # 2. Total de pagamentos de fatura / créditos aplicados a este cartão
+        stmt_inc = select(func.coalesce(func.sum(Transaction.amount), 0)).where(
+            Transaction.account_id == acc.id,
+            Transaction.type.in_([TransactionType.INCOME, TransactionType.TRANSFER])
+        )
+        total_exp = Decimal(str(await db.scalar(stmt_exp)))
+        total_inc = Decimal(str(await db.scalar(stmt_inc)))
+
+        # initial_balance para cartão representa limite utilizado prévio (se houver)
+        used_lim = max(Decimal("0.00"), acc.initial_balance + total_exp - total_inc)
+        credit_lim = acc.credit_limit or Decimal("0.00")
+        avail_lim = max(Decimal("0.00"), credit_lim - used_lim)
+
+        return AccountResponse(
+            id=acc.id,
+            workspace_id=acc.workspace_id,
+            owner_member_id=acc.owner_member_id,
+            name=acc.name,
+            type=acc.type,
+            initial_balance=acc.initial_balance,
+            current_balance=used_lim,
+            credit_limit=acc.credit_limit,
+            used_limit=used_lim,
+            available_limit=avail_lim,
+            closing_day=acc.closing_day,
+            due_day=acc.due_day,
+            is_active=acc.is_active,
+            created_at=acc.created_at
+        )
+    else:
+        # Conta corrente, carteira ou investimento
+        stmt_inc = select(func.coalesce(func.sum(Transaction.amount), 0)).where(
+            Transaction.account_id == acc.id,
+            Transaction.type.in_([TransactionType.INCOME, TransactionType.TRANSFER]),
+            Transaction.status == TransactionStatus.PAID
+        )
+        stmt_exp = select(func.coalesce(func.sum(Transaction.amount), 0)).where(
+            Transaction.account_id == acc.id,
+            Transaction.type.in_([TransactionType.EXPENSE, TransactionType.DEBT_PAYMENT]),
+            Transaction.status == TransactionStatus.PAID
+        )
+        total_inc = Decimal(str(await db.scalar(stmt_inc)))
+        total_exp = Decimal(str(await db.scalar(stmt_exp)))
+        current_bal = acc.initial_balance + total_inc - total_exp
+
+        return AccountResponse(
+            id=acc.id,
+            workspace_id=acc.workspace_id,
+            owner_member_id=acc.owner_member_id,
+            name=acc.name,
+            type=acc.type,
+            initial_balance=acc.initial_balance,
+            current_balance=current_bal,
+            credit_limit=None,
+            used_limit=None,
+            available_limit=current_bal,
+            closing_day=acc.closing_day,
+            due_day=acc.due_day,
+            is_active=acc.is_active,
+            created_at=acc.created_at
+        )
+
+
 @router.get("/{workspace_id}/accounts", response_model=List[AccountResponse], summary="Listar Contas")
 async def list_accounts(
     workspace_id: UUID,
@@ -67,38 +140,7 @@ async def list_accounts(
     )
     accounts = (await db.execute(stmt)).scalars().all()
     
-    res = []
-    for acc in accounts:
-        # Calcula saldo atual (Saldo inicial + Receitas pagas - Despesas pagas)
-        stmt_inc = select(func.coalesce(func.sum(Transaction.amount), 0)).where(
-            Transaction.account_id == acc.id,
-            Transaction.type == TransactionType.INCOME,
-            Transaction.status == TransactionStatus.PAID
-        )
-        stmt_exp = select(func.coalesce(func.sum(Transaction.amount), 0)).where(
-            Transaction.account_id == acc.id,
-            Transaction.type.in_([TransactionType.EXPENSE, TransactionType.DEBT_PAYMENT]),
-            Transaction.status == TransactionStatus.PAID
-        )
-        total_inc = Decimal(str(await db.scalar(stmt_inc)))
-        total_exp = Decimal(str(await db.scalar(stmt_exp)))
-        current_bal = acc.initial_balance + total_inc - total_exp
-
-        res.append(AccountResponse(
-            id=acc.id,
-            workspace_id=acc.workspace_id,
-            owner_member_id=acc.owner_member_id,
-            name=acc.name,
-            type=acc.type,
-            initial_balance=acc.initial_balance,
-            current_balance=current_bal,
-            credit_limit=acc.credit_limit,
-            closing_day=acc.closing_day,
-            due_day=acc.due_day,
-            is_active=acc.is_active,
-            created_at=acc.created_at
-        ))
-    return res
+    return [await compute_account_details(acc, db) for acc in accounts]
 
 
 @router.post("/{workspace_id}/accounts", response_model=AccountResponse, status_code=status.HTTP_201_CREATED, summary="Criar Conta / Cartão")
@@ -126,20 +168,205 @@ async def create_account(
     await db.commit()
     await db.refresh(account)
 
-    return AccountResponse(
-        id=account.id,
-        workspace_id=account.workspace_id,
-        owner_member_id=account.owner_member_id,
-        name=account.name,
-        type=account.type,
-        initial_balance=account.initial_balance,
-        current_balance=account.initial_balance,
-        credit_limit=account.credit_limit,
-        closing_day=account.closing_day,
-        due_day=account.due_day,
-        is_active=account.is_active,
-        created_at=account.created_at
+    return await compute_account_details(account, db)
+
+
+@router.put("/{workspace_id}/accounts/{account_id}", response_model=AccountResponse, summary="Atualizar Conta / Cartão / Ajustar Limite")
+async def update_account(
+    workspace_id: UUID,
+    account_id: UUID,
+    req: AccountUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    await get_workspace_membership(workspace_id, current_user.id, db)
+
+    stmt = select(Account).where(
+        Account.id == account_id,
+        Account.workspace_id == workspace_id
     )
+    acc = (await db.execute(stmt)).scalar_one_or_none()
+    if not acc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conta não encontrada.")
+
+    if req.name is not None:
+        acc.name = req.name.strip()
+    if req.credit_limit is not None:
+        acc.credit_limit = req.credit_limit
+    if req.closing_day is not None:
+        acc.closing_day = req.closing_day
+    if req.due_day is not None:
+        acc.due_day = req.due_day
+    if req.is_active is not None:
+        acc.is_active = req.is_active
+    if req.initial_balance is not None:
+        acc.initial_balance = req.initial_balance
+
+    # Recalibração de Limite Disponível fornecida diretamente pelo usuário
+    if req.adjusted_available_limit is not None and acc.type == AccountType.CREDIT_CARD:
+        stmt_exp = select(func.coalesce(func.sum(Transaction.amount), 0)).where(
+            Transaction.account_id == acc.id,
+            Transaction.type.in_([TransactionType.EXPENSE, TransactionType.DEBT_PAYMENT])
+        )
+        stmt_inc = select(func.coalesce(func.sum(Transaction.amount), 0)).where(
+            Transaction.account_id == acc.id,
+            Transaction.type.in_([TransactionType.INCOME, TransactionType.TRANSFER])
+        )
+        total_exp = Decimal(str(await db.scalar(stmt_exp)))
+        total_inc = Decimal(str(await db.scalar(stmt_inc)))
+
+        credit_lim = acc.credit_limit or Decimal("0.00")
+        target_used = max(Decimal("0.00"), credit_lim - req.adjusted_available_limit)
+        acc.initial_balance = target_used - (total_exp - total_inc)
+
+    await db.commit()
+    await db.refresh(acc)
+    return await compute_account_details(acc, db)
+
+
+@router.delete("/{workspace_id}/accounts/{account_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Excluir / Inativar Conta")
+async def delete_account(
+    workspace_id: UUID,
+    account_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    await get_workspace_membership(workspace_id, current_user.id, db)
+
+    stmt = select(Account).where(
+        Account.id == account_id,
+        Account.workspace_id == workspace_id
+    )
+    acc = (await db.execute(stmt)).scalar_one_or_none()
+    if not acc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conta não encontrada.")
+
+    stmt_tx = select(func.count(Transaction.id)).where(Transaction.account_id == account_id)
+    tx_count = await db.scalar(stmt_tx)
+    if tx_count and tx_count > 0:
+        acc.is_active = False
+        await db.commit()
+    else:
+        await db.delete(acc)
+        await db.commit()
+    return None
+
+
+@router.post("/{workspace_id}/accounts/{account_id}/pay-invoice", response_model=AccountResponse, status_code=status.HTTP_201_CREATED, summary="Pagar Fatura do Cartão")
+async def pay_card_invoice(
+    workspace_id: UUID,
+    account_id: UUID,
+    req: InvoicePaymentRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    member = await get_workspace_membership(workspace_id, current_user.id, db)
+
+    # 1. Valida cartão de crédito
+    stmt_card = select(Account).where(
+        Account.id == account_id,
+        Account.workspace_id == workspace_id,
+        Account.is_active == True
+    )
+    card = (await db.execute(stmt_card)).scalar_one_or_none()
+    if not card or card.type != AccountType.CREDIT_CARD:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A conta de destino deve ser um Cartão de Crédito ativo.")
+
+    # 2. Valida conta bancária de origem
+    stmt_src = select(Account).where(
+        Account.id == req.source_account_id,
+        Account.workspace_id == workspace_id,
+        Account.is_active == True
+    )
+    src_acc = (await db.execute(stmt_src)).scalar_one_or_none()
+    if not src_acc or src_acc.type == AccountType.CREDIT_CARD:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A conta de origem do pagamento deve ser uma Conta Corrente ou Carteira válida.")
+
+    # 3. Localiza ou cria categoria padrão para Pagamento de Cartão
+    stmt_cat = select(Category).where(
+        Category.workspace_id == workspace_id,
+        Category.name.ilike("%Fatura%")
+    )
+    cat = (await db.execute(stmt_cat)).scalars().first()
+    if not cat:
+        stmt_any_cat = select(Category).where(Category.workspace_id == workspace_id)
+        cat = (await db.execute(stmt_any_cat)).scalars().first()
+        if not cat:
+            cat = Category(
+                id=uuid.uuid4(),
+                workspace_id=workspace_id,
+                name="Pagamento de Cartão",
+                icon="credit-card",
+                color="#8B5CF6"
+            )
+            db.add(cat)
+            await db.flush()
+
+    # 4. Localiza Centro de Custo padrão
+    stmt_cc = select(CostCenter).where(CostCenter.workspace_id == workspace_id)
+    cost_center = (await db.execute(stmt_cc)).scalars().first()
+    if not cost_center:
+        cost_center = CostCenter(
+            id=uuid.uuid4(),
+            workspace_id=workspace_id,
+            name="Geral",
+            scope=CostCenterScope.FAMILY
+        )
+        db.add(cost_center)
+        await db.flush()
+
+    paid_by_id = req.paid_by_member_id or member.id
+    pay_date = req.payment_date or date.today()
+    desc = req.notes or f"Pagamento Fatura - {card.name}"
+    series_id = uuid.uuid4()
+
+    # 5. Cria débito na conta bancária de saída
+    tx_debit = Transaction(
+        id=uuid.uuid4(),
+        workspace_id=workspace_id,
+        account_id=src_acc.id,
+        paid_by_member_id=paid_by_id,
+        cost_center_id=cost_center.id,
+        category_id=cat.id,
+        amount=req.amount,
+        type=TransactionType.EXPENSE,
+        essentiality=EssentialityGrade.ESSENTIAL,
+        transaction_date=pay_date,
+        status=TransactionStatus.PAID,
+        series_id=series_id,
+        installment_current=1,
+        installment_total=1,
+        description=f"Pagamento Fatura {card.name}",
+        notes=desc
+    )
+    db.add(tx_debit)
+
+    # 6. Cria crédito no cartão de crédito (restaura limite)
+    tx_credit = Transaction(
+        id=uuid.uuid4(),
+        workspace_id=workspace_id,
+        account_id=card.id,
+        paid_by_member_id=paid_by_id,
+        cost_center_id=cost_center.id,
+        category_id=cat.id,
+        amount=req.amount,
+        type=TransactionType.INCOME,
+        essentiality=EssentialityGrade.ESSENTIAL,
+        transaction_date=pay_date,
+        status=TransactionStatus.PAID,
+        series_id=series_id,
+        installment_current=1,
+        installment_total=1,
+        description=f"Crédito Pagamento Fatura ({src_acc.name})",
+        notes=desc
+    )
+    db.add(tx_credit)
+
+    await db.commit()
+    await db.refresh(card)
+
+    return await compute_account_details(card, db)
+
 
 
 # ==================== 2. CENTROS DE CUSTO & CATEGORIAS ====================
