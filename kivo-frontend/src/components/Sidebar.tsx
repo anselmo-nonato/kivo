@@ -64,7 +64,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Sidebar Container */}
       <aside
-        className={`fixed md:sticky top-0 z-50 md:z-30 h-screen bg-[#051329] text-slate-300 flex flex-col justify-between shrink-0 border-r border-slate-800 transition-all duration-300 ease-in-out ${
+        className={`fixed md:static inset-y-0 left-0 z-50 md:z-30 h-screen bg-[#051329] text-slate-300 flex flex-col justify-between shrink-0 border-r border-slate-800 transition-all duration-300 ease-in-out ${
           isCollapsed ? "w-20" : "w-64"
         } ${
           isMobileOpen
@@ -72,8 +72,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             : "-translate-x-full md:translate-x-0"
         }`}
       >
-        {/* Top Header & Brand */}
-        <div>
+        {/* Top Header & Brand & Nav Links */}
+        <div className="flex-1 flex flex-col min-h-0 overflow-y-auto overflow-x-hidden">
           <div className="h-16 flex items-center justify-between px-4 border-b border-slate-800/80 gap-2">
             <Link
               href="/dashboard"

@@ -49,7 +49,7 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
   }
 
   return (
-    <div className="min-h-screen flex bg-slate-50 overflow-x-hidden">
+    <div className="h-screen flex bg-slate-50 overflow-hidden">
       {/* Sidebar Desktop e Gaveta Mobile */}
       <Sidebar
         isCollapsed={isCollapsed}
@@ -58,8 +58,8 @@ export const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children })
         onCloseMobile={() => setIsMobileOpen(false)}
       />
 
-      {/* Conteúdo Principal */}
-      <div className="flex-1 flex flex-col min-w-0">
+      {/* Conteúdo Principal com Rolagem Independente */}
+      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto overflow-x-hidden">
         <Header
           onOpen2FAModal={() => setIs2FAModalOpen(true)}
           onToggleMobile={() => setIsMobileOpen(!isMobileOpen)}
