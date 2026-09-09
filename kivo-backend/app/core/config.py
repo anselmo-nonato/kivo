@@ -1,4 +1,4 @@
-﻿from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings
 from typing import List
 
 class Settings(BaseSettings):
@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     
     ENVIRONMENT: str = "dev"
     SECRET_KEY: str = "kivo_super_secret_jwt_key_dev_2026"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 dias para sessão persistente
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     
     DATABASE_URL: str = "postgresql+asyncpg://kivo_admin:kivo_secret_local@postgres:5432/kivo_db"

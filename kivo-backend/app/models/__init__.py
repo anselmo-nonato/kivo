@@ -71,6 +71,7 @@ class User(Base):
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     backup_codes = relationship("UserBackupCode", back_populates="user", cascade="all, delete-orphan")
+    trusted_devices = relationship("TrustedDevice", back_populates="user", cascade="all, delete-orphan")
     workspaces = relationship("Workspace", back_populates="owner")
     memberships = relationship("WorkspaceMember", back_populates="user", cascade="all, delete-orphan")
 
@@ -85,6 +86,22 @@ class UserBackupCode(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     user = relationship("User", back_populates="backup_codes")
+
+
+class TrustedDevice(Base):
+    __tablename__ = "trusted_devices"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    device_token_hash = Column(String(64), unique=True, index=True, nullable=False)
+    device_name = Column(String(150), nullable=False)
+    user_agent = Column(Text, nullable=True)
+    ip_address = Column(String(45), nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    last_used_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    user = relationship("User", back_populates="trusted_devices")
 
 
 class Workspace(Base):

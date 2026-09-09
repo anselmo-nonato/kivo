@@ -14,26 +14,33 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [mfaToken, setMfaToken] = useState<string | null>(null);
   const [mfaCode, setMfaCode] = useState("");
+  const [rememberDevice, setRememberDevice] = useState(true);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Etapa 1: Login com Senha
+  // Etapa 1: Login com Senha (com envio do Trusted Device Token se existente)
   const handlePasswordLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
 
     try {
+      const savedTrustedToken = typeof window !== "undefined" ? localStorage.getItem("kivo_trusted_device_token") : null;
+
       const res = await api.post("/auth/login", {
         email: email.trim().toLowerCase(),
         password: password,
+        trusted_device_token: savedTrustedToken || undefined,
       });
 
-      // Se exigir 2FA
+      // Se exigir 2FA (não é dispositivo confiável ou token expirou)
       if (res.data.mfa_required) {
         setMfaToken(res.data.mfa_token);
       } else {
-        // Login direto
+        // Login direto bem-sucedido (dispositivo confiável ou sem 2FA)
+        if (res.data.trusted_device_token) {
+          localStorage.setItem("kivo_trusted_device_token", res.data.trusted_device_token);
+        }
         loginWithTokens(res.data.access_token, res.data.refresh_token, res.data.user);
       }
     } catch (err: any) {
@@ -43,17 +50,25 @@ export default function LoginPage() {
     }
   };
 
-  // Etapa 2: Verificação do 2FA / Backup Code
+  // Etapa 2: Verificação do 2FA / Backup Code + Opção Lembrar Dispositivo
   const handleVerifyMfa = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
 
     try {
+      const userAgentStr = typeof navigator !== "undefined" ? navigator.userAgent : "Dispositivo Web";
       const res = await api.post("/auth/2fa/verify", {
         mfa_token: mfaToken,
         code: mfaCode.trim(),
+        remember_device: rememberDevice,
+        device_name: userAgentStr ? userAgentStr.slice(0, 100) : "Navegador Web",
       });
+
+      // Se gerou trusted device token, persiste no navegador por 30 dias
+      if (res.data.trusted_device_token) {
+        localStorage.setItem("kivo_trusted_device_token", res.data.trusted_device_token);
+      }
 
       loginWithTokens(res.data.access_token, res.data.refresh_token, res.data.user);
     } catch (err: any) {
@@ -122,7 +137,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
                   title={showPassword ? "Ocultar senha" : "Ver senha"}
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -140,7 +155,7 @@ export default function LoginPage() {
             </button>
           </form>
         ) : (
-          /* Formulário 2: 2FA TOTP */
+          /* Formulário 2: 2FA TOTP com Lembrar Dispositivo por 30 Dias */
           <form onSubmit={handleVerifyMfa} className="space-y-4">
             <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-3">
               <ShieldCheck className="w-6 h-6 text-emerald-600 shrink-0" />
@@ -162,6 +177,23 @@ export default function LoginPage() {
               />
             </div>
 
+            {/* Checkbox: Lembrar este dispositivo por 30 dias */}
+            <div className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200">
+              <input
+                id="rememberDevice"
+                type="checkbox"
+                checked={rememberDevice}
+                onChange={(e) => setRememberDevice(e.target.checked)}
+                className="mt-0.5 w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+              />
+              <label htmlFor="rememberDevice" className="text-xs font-semibold text-slate-700 cursor-pointer select-none leading-tight">
+                Lembrar este dispositivo por 30 dias
+                <span className="block text-[10px] text-slate-400 font-normal mt-0.5">
+                  Não solicitar código de 2 etapas neste navegador pelos próximos 30 dias
+                </span>
+              </label>
+            </div>
+
             <button
               type="submit"
               disabled={loading || !mfaCode}
@@ -173,8 +205,11 @@ export default function LoginPage() {
 
             <button
               type="button"
-              onClick={() => setMfaToken(null)}
-              className="w-full text-center text-xs text-slate-500 hover:underline pt-2"
+              onClick={() => {
+                setMfaToken(null);
+                setMfaCode("");
+              }}
+              className="w-full text-center text-xs text-slate-500 hover:underline pt-2 cursor-pointer"
             >
               Voltar ao login com senha
             </button>

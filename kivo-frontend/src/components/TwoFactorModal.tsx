@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState } from "react";
 import { api } from "@/lib/api";
@@ -111,13 +111,37 @@ export const TwoFactorModal: React.FC<TwoFactorModalProps> = ({ isOpen, onClose 
                 <Check className="w-4 h-4 text-emerald-600" /> Sua conta está protegida por 2FA!
               </p>
               <p className="text-xs text-emerald-700 mt-1">
-                A cada login, será solicitado o código gerado pelo aplicativo autenticador no seu celular.
+                A cada login em novos dispositivos, será solicitado o código do autenticador no seu celular.
               </p>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs space-y-2">
+              <p className="font-bold text-slate-700">Dispositivos Confiáveis (Lembrar por 30 Dias)</p>
+              <p className="text-slate-500">
+                Dispositivos lembrados não exigem código 2FA durante o período de 30 dias.
+              </p>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (confirm("Deseja revogar a confiança de todos os dispositivos? Todos os navegadores voltarão a exigir código 2FA.")) {
+                    try {
+                      await api.delete("/auth/trusted-devices");
+                      localStorage.removeItem("kivo_trusted_device_token");
+                      alert("Todos os dispositivos confiáveis foram revogados com sucesso.");
+                    } catch (err) {
+                      console.error(err);
+                    }
+                  }
+                }}
+                className="text-xs font-bold text-red-600 hover:text-red-700 hover:underline cursor-pointer"
+              >
+                Revogar Confiança de Todos os Dispositivos
+              </button>
             </div>
 
             <button
               onClick={() => setStep("disable")}
-              className="w-full py-2.5 rounded-xl border border-red-200 text-red-600 font-bold hover:bg-red-50 text-sm transition-colors"
+              className="w-full py-2.5 rounded-xl border border-red-200 text-red-600 font-bold hover:bg-red-50 text-sm transition-colors cursor-pointer"
             >
               Desativar 2FA
             </button>

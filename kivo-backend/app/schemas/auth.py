@@ -1,4 +1,4 @@
-﻿from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List
 from uuid import UUID
 from datetime import datetime
@@ -12,12 +12,14 @@ class UserRegisterRequest(BaseModel):
 class UserLoginRequest(BaseModel):
     email: EmailStr
     password: str
+    trusted_device_token: Optional[str] = None
 
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in: int
     refresh_token: str
+    trusted_device_token: Optional[str] = None
     user: "UserResponse"
 
 class MFAChallengeResponse(BaseModel):
@@ -38,10 +40,24 @@ class MFAEnableRequest(BaseModel):
 class MFAVerifyRequest(BaseModel):
     mfa_token: str
     code: str = Field(..., min_length=6, description="Código de 6 dígitos ou Código de Backup (XXXXX-XXXXX)")
+    remember_device: Optional[bool] = True
+    device_name: Optional[str] = None
 
 class MFADisableRequest(BaseModel):
     password: str
     code: str
+
+class TrustedDeviceResponse(BaseModel):
+    id: UUID
+    device_name: str
+    user_agent: Optional[str] = None
+    ip_address: Optional[str] = None
+    expires_at: datetime
+    last_used_at: Optional[datetime] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
 
 class WorkspaceBriefResponse(BaseModel):
     id: UUID

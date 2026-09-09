@@ -125,8 +125,60 @@ async def run_auth_2fa_test_suite():
         assert res.json()['mfa_enabled'] is False
         print('  ✓ 2FA desativado com sucesso mediante senha e código.')
 
+        # 12. Teste de Dispositivo Confiável (Remember Device 30 Dias)
+        print('12. Reativando 2FA e testando "Lembrar este dispositivo por 30 dias"...')
+        res_setup2 = await client.post('/auth/2fa/setup', headers={'Authorization': f'Bearer {access_token}'})
+        secret2 = res_setup2.json()['secret']
+        totp2 = pyotp.TOTP(secret2)
+        await client.post('/auth/2fa/enable', json={'code': totp2.now()}, headers={'Authorization': f'Bearer {access_token}'})
+
+        # Login Etapa 1
+        res_log1 = await client.post('/auth/login', json={'email': email, 'password': password})
+        mfa_tok = res_log1.json()['mfa_token']
+
+        # Login Etapa 2 com remember_device = True
+        res_ver_dev = await client.post('/auth/2fa/verify', json={
+            'mfa_token': mfa_tok,
+            'code': totp2.now(),
+            'remember_device': True,
+            'device_name': 'Chrome no Windows 11'
+        })
+        assert res_ver_dev.status_code == 200
+        trusted_dev_token = res_ver_dev.json()['trusted_device_token']
+        assert trusted_dev_token is not None
+        print(f'  ✓ 2FA validado com Lembrar Dispositivo! Token emitido: {trusted_dev_token[:12]}...')
+
+        # 13. Teste de Login subsequente usando o Trusted Device Token (deve pular o 2FA!)
+        print('13. Testando Login subsequente com Trusted Device Token (Pulo do 2FA)...')
+        res_direct = await client.post('/auth/login', json={
+            'email': email,
+            'password': password,
+            'trusted_device_token': trusted_dev_token
+        })
+        assert res_direct.status_code == 200
+        direct_data = res_direct.json()
+        assert 'access_token' in direct_data
+        assert direct_data.get('mfa_required') is not True
+        print('  ✓ SUCESSO: Login com Trusted Device pulou o desafio 2FA e emitiu sessão válida diretamente!')
+
+        # 14. Teste de Listagem e Revogação de Dispositivos Confiáveis
+        print('14. Testando listagem e revogação de dispositivos confiáveis...')
+        res_dev_list = await client.get('/auth/trusted-devices', headers={'Authorization': f'Bearer {direct_data["access_token"]}'})
+        assert res_dev_list.status_code == 200
+        assert len(res_dev_list.json()) >= 1
+
+        await client.delete('/auth/trusted-devices', headers={'Authorization': f'Bearer {direct_data["access_token"]}'})
+        res_after_revoke = await client.post('/auth/login', json={
+            'email': email,
+            'password': password,
+            'trusted_device_token': trusted_dev_token
+        })
+        assert res_after_revoke.status_code == 200
+        assert res_after_revoke.json()['mfa_required'] is True
+        print('  ✓ Dispositivos revogados com sucesso! Próximo login exigiu 2FA normalmente.')
+
     print('\n==========================================')
-    print('✅ TODOS OS 11 TESTES DE AUTH & 2FA PASSARAM COM 100% DE SUCESSO!')
+    print('✅ TODOS OS TESTES DE AUTH, 2FA E DISPOSITIVOS CONFIÁVEIS PASSARAM COM 100% DE SUCESSO!')
     print('==========================================\n')
 
 if __name__ == '__main__':

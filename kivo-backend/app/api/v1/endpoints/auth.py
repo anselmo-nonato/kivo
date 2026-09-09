@@ -1,9 +1,13 @@
-﻿from fastapi import APIRouter, Depends, HTTPException, status, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from typing import Optional, List
 import uuid
+from uuid import UUID
+import secrets
+import hashlib
 
 from app.core.database import get_db
 from app.core.config import settings
@@ -23,6 +27,7 @@ from app.core.security import (
 from app.models import (
     User,
     UserBackupCode,
+    TrustedDevice,
     Workspace,
     WorkspaceMember,
     WorkspaceType,
@@ -40,6 +45,7 @@ from app.schemas.auth import (
     MFAEnableRequest,
     MFAVerifyRequest,
     MFADisableRequest,
+    TrustedDeviceResponse,
     UserResponse,
     WorkspaceBriefResponse
 )
@@ -169,11 +175,16 @@ async def register(req: UserRegisterRequest, db: AsyncSession = Depends(get_db))
 
 
 @router.post("/login", summary="Login do Usuário")
-async def login(req: UserLoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(
+    req: UserLoginRequest,
+    request: Request,
+    x_trusted_device_token: Optional[str] = Header(None, alias="X-Trusted-Device-Token"),
+    db: AsyncSession = Depends(get_db)
+):
     """
     Etapa 1 do Login: Verifica credenciais.
-    Se o 2FA estiver ativado, retorna um token efêmero para a Etapa 2.
-    Caso contrário, retorna diretamente os tokens de acesso.
+    Se o 2FA estiver ativado mas o dispositivo for confiável (válido por 30 dias),
+    retorna os tokens de acesso diretamente sem solicitar TOTP.
     """
     stmt = select(User).where(User.email == req.email.lower().strip()).options(
         selectinload(User.memberships).selectinload(WorkspaceMember.workspace)
@@ -192,8 +203,26 @@ async def login(req: UserLoginRequest, db: AsyncSession = Depends(get_db)):
             detail="Conta desativada. Entre em contato com o suporte."
         )
 
-    # Se 2FA estiver ativado, emite desafio
-    if user.mfa_enabled:
+    # Verifica se há Trusted Device Token ativo
+    device_token = req.trusted_device_token or x_trusted_device_token
+    is_trusted_device = False
+
+    if device_token and user.mfa_enabled:
+        token_hash = hashlib.sha256(device_token.strip().encode("utf-8")).hexdigest()
+        now_utc = datetime.now(timezone.utc)
+        stmt_dev = select(TrustedDevice).where(
+            TrustedDevice.user_id == user.id,
+            TrustedDevice.device_token_hash == token_hash,
+            TrustedDevice.expires_at > now_utc
+        )
+        trusted_dev = (await db.execute(stmt_dev)).scalar_one_or_none()
+        if trusted_dev:
+            trusted_dev.last_used_at = now_utc
+            await db.commit()
+            is_trusted_device = True
+
+    # Se 2FA estiver ativado e NÃO for dispositivo confiável, emite desafio
+    if user.mfa_enabled and not is_trusted_device:
         mfa_token = create_mfa_challenge_token(user.id)
         return MFAChallengeResponse(
             mfa_required=True,
@@ -201,7 +230,7 @@ async def login(req: UserLoginRequest, db: AsyncSession = Depends(get_db)):
             message="Autenticação em 2 etapas requerida. Forneça o código do Google Authenticator ou backup code."
         )
 
-    # Login direto sem 2FA
+    # Login direto (sem 2FA ou com Dispositivo Confiável)
     access_token = create_access_token(user.id)
     refresh_token = create_refresh_token(user.id)
 
@@ -210,6 +239,7 @@ async def login(req: UserLoginRequest, db: AsyncSession = Depends(get_db)):
         token_type="bearer",
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         refresh_token=refresh_token,
+        trusted_device_token=device_token if is_trusted_device else None,
         user=build_user_response(user)
     )
 
@@ -285,9 +315,14 @@ async def enable_2fa(
 
 
 @router.post("/2fa/verify", response_model=TokenResponse, summary="Validar 2FA na Etapa 2 do Login")
-async def verify_2fa(req: MFAVerifyRequest, db: AsyncSession = Depends(get_db)):
+async def verify_2fa(
+    req: MFAVerifyRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
     """
     Valida o código de 6 dígitos ou um código de backup na segunda etapa do login.
+    Se remember_device for True, gera um token de dispositivo confiável válido por 30 dias.
     """
     payload = decode_token(req.mfa_token, expected_type="mfa_challenge")
     if not payload:
@@ -331,6 +366,31 @@ async def verify_2fa(req: MFAVerifyRequest, db: AsyncSession = Depends(get_db)):
             detail="Código de autenticação ou de recuperação inválido."
         )
 
+    trusted_device_raw = None
+    if req.remember_device:
+        trusted_device_raw = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(trusted_device_raw.encode("utf-8")).hexdigest()
+        now_utc = datetime.now(timezone.utc)
+        expires_at = now_utc + timedelta(days=30)
+
+        ua = request.headers.get("user-agent", "Navegador Web")
+        client_ip = request.client.host if request.client else "127.0.0.1"
+        dev_name = req.device_name or (ua[:100] if ua else "Dispositivo Confiável")
+
+        dev_record = TrustedDevice(
+            id=uuid.uuid4(),
+            user_id=user.id,
+            device_token_hash=token_hash,
+            device_name=dev_name,
+            user_agent=ua[:500] if ua else None,
+            ip_address=client_ip[:45],
+            expires_at=expires_at,
+            last_used_at=now_utc,
+            created_at=now_utc
+        )
+        db.add(dev_record)
+        await db.commit()
+
     access_token = create_access_token(user.id)
     refresh_token = create_refresh_token(user.id)
 
@@ -339,8 +399,52 @@ async def verify_2fa(req: MFAVerifyRequest, db: AsyncSession = Depends(get_db)):
         token_type="bearer",
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         refresh_token=refresh_token,
+        trusted_device_token=trusted_device_raw,
         user=build_user_response(user)
     )
+
+
+@router.get("/trusted-devices", response_model=List[TrustedDeviceResponse], summary="Listar Dispositivos Confiáveis")
+async def list_trusted_devices(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(TrustedDevice).where(
+        TrustedDevice.user_id == current_user.id,
+        TrustedDevice.expires_at > datetime.now(timezone.utc)
+    ).order_by(TrustedDevice.last_used_at.desc())
+    devices = (await db.execute(stmt)).scalars().all()
+    return devices
+
+
+@router.delete("/trusted-devices/{device_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Revogar Dispositivo Confiável")
+async def revoke_trusted_device(
+    device_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(TrustedDevice).where(
+        TrustedDevice.id == device_id,
+        TrustedDevice.user_id == current_user.id
+    )
+    dev = (await db.execute(stmt)).scalar_one_or_none()
+    if dev:
+        await db.delete(dev)
+        await db.commit()
+    return None
+
+
+@router.delete("/trusted-devices", status_code=status.HTTP_204_NO_CONTENT, summary="Revogar Todos os Dispositivos Confiáveis")
+async def revoke_all_trusted_devices(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    stmt = select(TrustedDevice).where(TrustedDevice.user_id == current_user.id)
+    devices = (await db.execute(stmt)).scalars().all()
+    for d in devices:
+        await db.delete(d)
+    await db.commit()
+    return None
 
 
 @router.post("/2fa/disable", response_model=UserResponse, summary="Desativar 2FA")
