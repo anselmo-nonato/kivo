@@ -59,6 +59,8 @@ export default function TransactionsPage() {
   const [totalInstallments, setTotalInstallments] = useState("1");
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [newTagName, setNewTagName] = useState("");
+  const [hasCardFee, setHasCardFee] = useState(false);
+  const [cardFeePercentage, setCardFeePercentage] = useState("5.0");
   const [error, setError] = useState("");
 
   const loadData = async () => {
@@ -522,6 +524,7 @@ export default function TransactionsPage() {
                     >
                       {accounts.map((a) => (
                         <option key={a.id} value={a.id}>
+                          {a.type === "credit_card" ? "💳 Cartão: " : "🏦 Conta: "}
                           {a.name}
                         </option>
                       ))}
@@ -544,6 +547,61 @@ export default function TransactionsPage() {
                     </select>
                   </div>
                 </div>
+
+                {/* Calculadora Opcional de Taxa do Cartão para Boletos/Despesas */}
+                {type === "expense" && accounts.find((a) => a.id === accountId)?.type === "credit_card" && (
+                  <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-2xl space-y-2 animate-in fade-in">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-blue-900">
+                        <CreditCard className="w-3.5 h-3.5 text-blue-600" />
+                        <span>Pagamento de Boleto/Conta no Cartão com Taxa</span>
+                      </div>
+                      <label className="flex items-center gap-1 cursor-pointer text-xs font-semibold text-blue-800">
+                        <input
+                          type="checkbox"
+                          checked={hasCardFee}
+                          onChange={(e) => {
+                            const next = e.target.checked;
+                            setHasCardFee(next);
+                            if (next && amount) {
+                              const base = parseFloat(amount) || 0;
+                              const fee = (base * (parseFloat(cardFeePercentage) || 5.0)) / 100;
+                              setAmount((base + fee).toFixed(2));
+                            }
+                          }}
+                          className="rounded text-blue-600 focus:ring-blue-500"
+                        />
+                        <span>Aplicar Taxa</span>
+                      </label>
+                    </div>
+                    {hasCardFee && (
+                      <div className="flex items-center justify-between gap-3 text-xs">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-slate-600 font-medium">Taxa do App (%):</span>
+                          <input
+                            type="number"
+                            step="0.1"
+                            value={cardFeePercentage}
+                            onChange={(e) => setCardFeePercentage(e.target.value)}
+                            className="w-16 px-2 py-1 rounded-lg border border-blue-200 bg-white text-xs font-bold text-slate-800 font-mono"
+                          />
+                          <span className="font-bold text-slate-400">%</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const base = parseFloat(amount) || 0;
+                            const fee = (base * (parseFloat(cardFeePercentage) || 5.0)) / 100;
+                            setAmount((base + fee).toFixed(2));
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-blue-600 text-white font-bold text-[11px] hover:bg-blue-700 transition-colors"
+                        >
+                          Recalcular (+{cardFeePercentage}%)
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="grid grid-cols-3 gap-3">
                   <div>

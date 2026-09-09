@@ -128,6 +128,7 @@ async def run_intelligence_test_suite():
             "due_day": 20
         }, headers=headers1)
         assert res_d2.status_code == 201
+        debt2_id = res_d2.json()["id"]
         print("  OK: Dívidas cadastradas com sucesso.")
 
         # 6. Testar Amortização Extraordinária (Issue #9)
@@ -161,6 +162,40 @@ async def run_intelligence_test_suite():
         assert float(dti["dti_percentage"]) == 10.25
         assert "Saudável" in dti["classification"]
         print(f"  OK: Termômetro DTI = {dti['dti_percentage']}% [{dti['classification']}] - Cor: {dti['status_color']}")
+
+        # 9. Testar Pagamento de Parcela de Dívida via Cartão de Crédito com Taxa de 5%
+        print("8. Testando pagamento de parcela via Cartão de Crédito com taxa de intermediação de 5%...")
+        res_cc_acc = await client.post(f"/workspaces/{ws_id}/accounts", json={
+            "name": "Cartão XP Infinite",
+            "type": "credit_card",
+            "owner_member_id": member1_id,
+            "initial_balance": 0.0,
+            "credit_limit": 25000.00,
+            "closing_day": 25,
+            "due_day": 5
+        }, headers=headers1)
+        cc_acc_id = res_cc_acc.json()["id"]
+
+        # Dívida 2: Saldo R$ 15.000,00, Parcela R$ 850,00, 24 parcelas restantes
+        # Pagamento da parcela de R$ 850,00 via Cartão c/ taxa de 5% (R$ 42,50) -> Total na fatura: R$ 892,50
+        res_pay = await client.post(f"/workspaces/{ws_id}/debts/{debt2_id}/pay-installment", json={
+            "account_id": cc_acc_id,
+            "amount": 850.00,
+            "fee_percentage": 5.0,
+            "card_installments": 1
+        }, headers=headers1)
+        assert res_pay.status_code == 200
+        debt2_updated = res_pay.json()
+        assert float(debt2_updated["current_balance"]) == 14150.00 # 15000 - 850
+        assert debt2_updated["remaining_installments"] == 23 # 24 - 1
+        print("  OK: Dívida abatida pelo valor nominal (R$ 14.150,00 e 23 parcelas restantes).")
+
+        # Verifica lançamento no extrato do cartão com a taxa de 5%
+        txs = (await client.get(f"/workspaces/{ws_id}/transactions", headers=headers1)).json()
+        card_tx = [t for t in txs if t["account_id"] == cc_acc_id][0]
+        assert float(card_tx["amount"]) == 892.50 # 850 + 42.50
+        assert "taxa 5.0%" in card_tx["description"] or "Cartão" in card_tx["description"]
+        print(f"  OK: Fatura do cartão herdou a cobrança com a taxa de 5% (R$ {card_tx['amount']}: '{card_tx['description']}').")
 
     print("\n==========================================")
     print("✅ TODOS OS TESTES DE INTELIGÊNCIA FINANCEIRA PASSARAM COM 100% DE SUCESSO!")

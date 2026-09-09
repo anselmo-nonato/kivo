@@ -229,7 +229,7 @@ async def amortize_debt(
     if not debt:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dívida não encontrada.")
 
-    # Abate direto do saldo devedor
+    # 1. Abate direto do saldo devedor pelo valor nominal
     new_balance = max(Decimal("0.00"), debt.current_balance - req.extra_amount)
     debt.current_balance = new_balance
 
@@ -243,6 +243,51 @@ async def amortize_debt(
         # Reduz parcela mantendo prazo
         if debt.remaining_installments > 0 and new_balance > 0:
             debt.installment_amount = round(new_balance / Decimal(str(debt.remaining_installments)), 2)
+
+    # 2. Carrega Centro de Custo e Categoria padrão de dívidas
+    stmt_cat = select(Category).where(Category.workspace_id == workspace_id, Category.name.ilike("%Dívida%"))
+    cat = (await db.execute(stmt_cat)).scalars().first()
+    if not cat:
+        stmt_any_cat = select(Category).where(Category.workspace_id == workspace_id)
+        cat = (await db.execute(stmt_any_cat)).scalars().first()
+
+    stmt_cc = select(CostCenter).where(CostCenter.workspace_id == workspace_id)
+    cc = (await db.execute(stmt_cc)).scalars().first()
+
+    # 3. Calcula taxa de intermediação / cartão
+    fee_pct = req.fee_percentage or Decimal("0.0")
+    fee_amt = req.fee_amount or (round(req.extra_amount * (fee_pct / Decimal("100")), 2) if fee_pct > 0 else Decimal("0.0"))
+    total_charged = req.extra_amount + fee_amt
+    installments_count = req.card_installments or 1
+
+    desc_prefix = f"Amortização Dívida - {debt.creditor_name}"
+    if fee_pct > 0 or fee_amt > 0:
+        desc_prefix += f" (via Cartão c/ taxa {fee_pct}%)"
+
+    series_id = uuid.uuid4() if installments_count > 1 else None
+    inst_amount = round(total_charged / Decimal(str(installments_count)), 2)
+
+    for i in range(1, installments_count + 1):
+        t_date = date.today() + relativedelta(months=i - 1)
+        desc = f"{desc_prefix} ({i}/{installments_count})" if installments_count > 1 else desc_prefix
+        tx = Transaction(
+            id=uuid.uuid4(),
+            workspace_id=workspace_id,
+            account_id=req.account_id,
+            paid_by_member_id=debt.member_id,
+            cost_center_id=cc.id if cc else None,
+            category_id=cat.id if cat else None,
+            amount=inst_amount,
+            type=TransactionType.DEBT_PAYMENT,
+            essentiality=EssentialityGrade.DEBT,
+            transaction_date=t_date,
+            description=desc,
+            status=TransactionStatus.PAID if i == 1 else TransactionStatus.PENDING,
+            series_id=series_id,
+            installment_current=i,
+            installment_total=installments_count
+        )
+        db.add(tx)
 
     await db.commit()
     await db.refresh(debt)
@@ -280,10 +325,6 @@ async def update_debt(
         debt.due_day = req.due_day
     if req.start_date is not None:
         debt.start_date = req.start_date
-
-    await db.commit()
-    await db.refresh(debt)
-    return build_debt_response(debt)
 
     await db.commit()
     await db.refresh(debt)
@@ -337,26 +378,42 @@ async def pay_debt_installment(
     stmt_cc = select(CostCenter).where(CostCenter.workspace_id == workspace_id)
     cc = (await db.execute(stmt_cc)).scalars().first()
 
-    # 2. Cria transação de débito no extrato
-    tx = Transaction(
-        id=uuid.uuid4(),
-        workspace_id=workspace_id,
-        account_id=req.account_id,
-        paid_by_member_id=debt.member_id,
-        cost_center_id=cc.id if cc else None,
-        category_id=cat.id if cat else None,
-        amount=pay_amount,
-        type=TransactionType.DEBT_PAYMENT,
-        essentiality=EssentialityGrade.DEBT,
-        transaction_date=pay_date,
-        description=f"Pagamento Parcela Dívida - {debt.creditor_name}",
-        status=TransactionStatus.PAID,
-        installment_current=1,
-        installment_total=1
-    )
-    db.add(tx)
+    # 2. Calcula taxa de intermediação / cartão
+    fee_pct = req.fee_percentage or Decimal("0.0")
+    fee_amt = req.fee_amount or (round(pay_amount * (fee_pct / Decimal("100")), 2) if fee_pct > 0 else Decimal("0.0"))
+    total_charged = pay_amount + fee_amt
+    installments_count = req.card_installments or 1
 
-    # 3. Abate do saldo e do prazo
+    desc_prefix = f"Pagamento Parcela Dívida - {debt.creditor_name}"
+    if fee_pct > 0 or fee_amt > 0:
+        desc_prefix += f" (via Cartão c/ taxa {fee_pct}%)"
+
+    series_id = uuid.uuid4() if installments_count > 1 else None
+    inst_amount = round(total_charged / Decimal(str(installments_count)), 2)
+
+    for i in range(1, installments_count + 1):
+        t_date = pay_date + relativedelta(months=i - 1)
+        desc = f"{desc_prefix} ({i}/{installments_count})" if installments_count > 1 else desc_prefix
+        tx = Transaction(
+            id=uuid.uuid4(),
+            workspace_id=workspace_id,
+            account_id=req.account_id,
+            paid_by_member_id=debt.member_id,
+            cost_center_id=cc.id if cc else None,
+            category_id=cat.id if cat else None,
+            amount=inst_amount,
+            type=TransactionType.DEBT_PAYMENT,
+            essentiality=EssentialityGrade.DEBT,
+            transaction_date=t_date,
+            description=desc,
+            status=TransactionStatus.PAID if i == 1 else TransactionStatus.PENDING,
+            series_id=series_id,
+            installment_current=i,
+            installment_total=installments_count
+        )
+        db.add(tx)
+
+    # 3. Abate do saldo e do prazo pelo valor nominal da parcela
     debt.current_balance = max(Decimal("0.00"), debt.current_balance - pay_amount)
     debt.remaining_installments = max(0, debt.remaining_installments - 1)
 

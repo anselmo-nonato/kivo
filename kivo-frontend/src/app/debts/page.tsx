@@ -18,7 +18,9 @@ import {
   Pencil,
   Trash2,
   CheckCircle,
-  CreditCard
+  CreditCard,
+  Percent,
+  Info
 } from "lucide-react";
 
 export default function DebtsPage() {
@@ -38,11 +40,18 @@ export default function DebtsPage() {
   // Form Amortização
   const [amortizeAmount, setAmortizeAmount] = useState("");
   const [amortizeStrategy, setAmortizeStrategy] = useState("reduce_term");
+  const [amortizeAccountId, setAmortizeAccountId] = useState("");
+  const [amortizeHasCardFee, setAmortizeHasCardFee] = useState(true);
+  const [amortizeCardFeePercentage, setAmortizeCardFeePercentage] = useState("5.0");
+  const [amortizeCardInstallments, setAmortizeCardInstallments] = useState("1");
 
   // Form Pagamento de Parcela
   const [installmentPayAmount, setInstallmentPayAmount] = useState("");
   const [installmentPayDate, setInstallmentPayDate] = useState(new Date().toISOString().slice(0, 10));
   const [payAccountId, setPayAccountId] = useState("");
+  const [payHasCardFee, setPayHasCardFee] = useState(true);
+  const [payCardFeePercentage, setPayCardFeePercentage] = useState("5.0");
+  const [payCardInstallments, setPayCardInstallments] = useState("1");
 
   // Form Criar / Editar Dívida
   const [creditorName, setCreditorName] = useState("");
@@ -169,11 +178,18 @@ export default function DebtsPage() {
     e.preventDefault();
     if (!selectedDebt) return;
     setError("");
+
+    const isCreditCard = accounts.find((a) => a.id === payAccountId)?.type === "credit_card";
+    const feePct = isCreditCard && payHasCardFee ? parseFloat(payCardFeePercentage) || 0 : 0;
+    const cardInst = isCreditCard ? parseInt(payCardInstallments) || 1 : 1;
+
     try {
       await api.post(`/workspaces/${activeWorkspace?.id}/debts/${selectedDebt.id}/pay-installment`, {
         account_id: payAccountId,
         amount: parseFloat(installmentPayAmount),
         payment_date: installmentPayDate,
+        fee_percentage: feePct,
+        card_installments: cardInst,
       });
 
       setIsPayInstallmentModalOpen(false);
@@ -187,11 +203,19 @@ export default function DebtsPage() {
     e.preventDefault();
     if (!selectedDebt) return;
     setError("");
+
+    const targetAccId = amortizeAccountId || payAccountId;
+    const isCreditCard = accounts.find((a) => a.id === targetAccId)?.type === "credit_card";
+    const feePct = isCreditCard && amortizeHasCardFee ? parseFloat(amortizeCardFeePercentage) || 0 : 0;
+    const cardInst = isCreditCard ? parseInt(amortizeCardInstallments) || 1 : 1;
+
     try {
       await api.post(`/workspaces/${activeWorkspace?.id}/debts/${selectedDebt.id}/amortize`, {
         extra_amount: parseFloat(amortizeAmount),
-        account_id: payAccountId,
+        account_id: targetAccId,
         strategy: amortizeStrategy,
+        fee_percentage: feePct,
+        card_installments: cardInst,
       });
 
       setIsAmortizeModalOpen(false);
@@ -212,6 +236,23 @@ export default function DebtsPage() {
     setDueDay("10");
     setSelectedDebt(null);
   };
+
+  const isPayAccountCreditCard = accounts.find((a) => a.id === payAccountId)?.type === "credit_card";
+  const payNominal = parseFloat(installmentPayAmount) || 0;
+  const payFeePct = payHasCardFee ? parseFloat(payCardFeePercentage) || 0 : 0;
+  const payFeeValue = isPayAccountCreditCard && payHasCardFee ? (payNominal * payFeePct) / 100 : 0;
+  const payTotalCard = payNominal + payFeeValue;
+  const payCardInstCount = parseInt(payCardInstallments) || 1;
+  const payInstValue = payTotalCard / (payCardInstCount || 1);
+
+  const effectiveAmortizeAccId = amortizeAccountId || payAccountId;
+  const isAmortizeAccountCreditCard = accounts.find((a) => a.id === effectiveAmortizeAccId)?.type === "credit_card";
+  const amortizeNominal = parseFloat(amortizeAmount) || 0;
+  const amortizeFeePct = amortizeHasCardFee ? parseFloat(amortizeCardFeePercentage) || 0 : 0;
+  const amortizeFeeValue = isAmortizeAccountCreditCard && amortizeHasCardFee ? (amortizeNominal * amortizeFeePct) / 100 : 0;
+  const amortizeTotalCard = amortizeNominal + amortizeFeeValue;
+  const amortizeCardInstCount = parseInt(amortizeCardInstallments) || 1;
+  const amortizeInstValue = amortizeTotalCard / (amortizeCardInstCount || 1);
 
   return (
     <AppLayout>
@@ -460,7 +501,7 @@ export default function DebtsPage() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Conta Bancária de Pagamento</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Conta Bancária / Cartão de Pagamento</label>
                   <select
                     value={payAccountId}
                     onChange={(e) => setPayAccountId(e.target.value)}
@@ -469,11 +510,92 @@ export default function DebtsPage() {
                   >
                     {accounts.map((a) => (
                       <option key={a.id} value={a.id}>
+                        {a.type === "credit_card" ? "💳 Cartão: " : "🏦 Conta: "}
                         {a.name} (Saldo: R$ {parseFloat(a.current_balance || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })})
                       </option>
                     ))}
                   </select>
                 </div>
+
+                {/* Calculadora de Taxa do Cartão de Crédito */}
+                {isPayAccountCreditCard && (
+                  <div className="p-3.5 bg-blue-50/70 border border-blue-200 rounded-2xl space-y-3 animate-in fade-in">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <CreditCard className="w-4 h-4 text-blue-600" />
+                        <span className="text-xs font-bold text-blue-900">Taxa do Cartão (Intermediação / Boleto)</span>
+                      </div>
+                      <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-blue-800">
+                        <input
+                          type="checkbox"
+                          checked={payHasCardFee}
+                          onChange={(e) => setPayHasCardFee(e.target.checked)}
+                          className="rounded text-blue-600 focus:ring-blue-500"
+                        />
+                        <span>Aplicar Taxa</span>
+                      </label>
+                    </div>
+
+                    {payHasCardFee && (
+                      <>
+                        <div className="grid grid-cols-2 gap-2.5">
+                          <div>
+                            <label className="block text-[11px] font-bold text-blue-800 mb-1">Taxa do Gateway / App (%)</label>
+                            <div className="relative">
+                              <input
+                                type="number"
+                                step="0.1"
+                                min="0"
+                                max="50"
+                                value={payCardFeePercentage}
+                                onChange={(e) => setPayCardFeePercentage(e.target.value)}
+                                className="w-full px-3 py-1.5 rounded-xl border border-blue-200 bg-white text-xs font-bold text-slate-800 font-mono"
+                              />
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">%</span>
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-bold text-blue-800 mb-1">Parcelas no Cartão</label>
+                            <select
+                              value={payCardInstallments}
+                              onChange={(e) => setPayCardInstallments(e.target.value)}
+                              className="w-full px-3 py-1.5 rounded-xl border border-blue-200 bg-white text-xs font-bold text-slate-800"
+                            >
+                              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => (
+                                <option key={n} value={n}>
+                                  {n === 1 ? "1x (À vista na fatura)" : `${n}x`}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Resumo da Cobrança */}
+                        <div className="p-2.5 bg-white rounded-xl border border-blue-100 text-xs space-y-1 font-medium">
+                          <div className="flex justify-between text-slate-500">
+                            <span>Abatimento na dívida:</span>
+                            <span className="font-bold text-slate-700">R$ {payNominal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                          </div>
+                          <div className="flex justify-between text-blue-600">
+                            <span>Taxa do cartão ({payFeePct}%):</span>
+                            <span className="font-bold">+ R$ {payFeeValue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                          </div>
+                          <div className="flex justify-between text-slate-900 font-extrabold pt-1 border-t border-slate-100">
+                            <span>Total lançado no cartão:</span>
+                            <span className="text-emerald-600">
+                              R$ {payTotalCard.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                              {payCardInstCount > 1 && (
+                                <span className="text-[10px] text-slate-500 font-normal block text-right">
+                                  ({payCardInstCount}x de R$ {payInstValue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })})
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Data do Pagamento</label>
@@ -487,8 +609,12 @@ export default function DebtsPage() {
                 </div>
 
                 <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs text-slate-500 space-y-1">
-                  <p>• Esta ação criará um lançamento de despesa no seu extrato bancário.</p>
-                  <p>• Abaterá 1 parcela do prazo restante e o valor do saldo devedor.</p>
+                  <p>• O saldo da dívida será abatido pelo valor nominal (R$ {payNominal.toFixed(2)}).</p>
+                  {isPayAccountCreditCard && payHasCardFee ? (
+                    <p className="text-blue-700 font-semibold">• A fatura do cartão herdará o valor total com a taxa aplicada (R$ {payTotalCard.toFixed(2)}).</p>
+                  ) : (
+                    <p>• Esta ação criará um lançamento de despesa no extrato da conta.</p>
+                  )}
                 </div>
 
                 <button
@@ -529,6 +655,103 @@ export default function DebtsPage() {
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-bold font-mono focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Conta Bancária / Cartão de Pagamento</label>
+                  <select
+                    value={amortizeAccountId || payAccountId}
+                    onChange={(e) => setAmortizeAccountId(e.target.value)}
+                    required
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm"
+                  >
+                    {accounts.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.type === "credit_card" ? "💳 Cartão: " : "🏦 Conta: "}
+                        {a.name} (Saldo: R$ {parseFloat(a.current_balance || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Calculadora de Taxa do Cartão para Amortização */}
+                {isAmortizeAccountCreditCard && (
+                  <div className="p-3.5 bg-blue-50/70 border border-blue-200 rounded-2xl space-y-3 animate-in fade-in">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <CreditCard className="w-4 h-4 text-blue-600" />
+                        <span className="text-xs font-bold text-blue-900">Taxa do Cartão (Intermediação / Boleto)</span>
+                      </div>
+                      <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-blue-800">
+                        <input
+                          type="checkbox"
+                          checked={amortizeHasCardFee}
+                          onChange={(e) => setAmortizeHasCardFee(e.target.checked)}
+                          className="rounded text-blue-600 focus:ring-blue-500"
+                        />
+                        <span>Aplicar Taxa</span>
+                      </label>
+                    </div>
+
+                    {amortizeHasCardFee && (
+                      <>
+                        <div className="grid grid-cols-2 gap-2.5">
+                          <div>
+                            <label className="block text-[11px] font-bold text-blue-800 mb-1">Taxa do Gateway / App (%)</label>
+                            <div className="relative">
+                              <input
+                                type="number"
+                                step="0.1"
+                                min="0"
+                                max="50"
+                                value={amortizeCardFeePercentage}
+                                onChange={(e) => setAmortizeCardFeePercentage(e.target.value)}
+                                className="w-full px-3 py-1.5 rounded-xl border border-blue-200 bg-white text-xs font-bold text-slate-800 font-mono"
+                              />
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">%</span>
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-bold text-blue-800 mb-1">Parcelas no Cartão</label>
+                            <select
+                              value={amortizeCardInstallments}
+                              onChange={(e) => setAmortizeCardInstallments(e.target.value)}
+                              className="w-full px-3 py-1.5 rounded-xl border border-blue-200 bg-white text-xs font-bold text-slate-800"
+                            >
+                              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => (
+                                <option key={n} value={n}>
+                                  {n === 1 ? "1x (À vista na fatura)" : `${n}x`}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Resumo da Cobrança */}
+                        <div className="p-2.5 bg-white rounded-xl border border-blue-100 text-xs space-y-1 font-medium">
+                          <div className="flex justify-between text-slate-500">
+                            <span>Abatimento na dívida:</span>
+                            <span className="font-bold text-slate-700">R$ {amortizeNominal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                          </div>
+                          <div className="flex justify-between text-blue-600">
+                            <span>Taxa do cartão ({amortizeFeePct}%):</span>
+                            <span className="font-bold">+ R$ {amortizeFeeValue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                          </div>
+                          <div className="flex justify-between text-slate-900 font-extrabold pt-1 border-t border-slate-100">
+                            <span>Total lançado no cartão:</span>
+                            <span className="text-emerald-600">
+                              R$ {amortizeTotalCard.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                              {amortizeCardInstCount > 1 && (
+                                <span className="text-[10px] text-slate-500 font-normal block text-right">
+                                  ({amortizeCardInstCount}x de R$ {amortizeInstValue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })})
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Estratégia de Amortização</label>

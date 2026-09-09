@@ -60,11 +60,17 @@ class DebtPayInstallmentRequest(BaseModel):
     account_id: UUID
     amount: Optional[Decimal] = Field(None, gt=0)
     payment_date: Optional[date] = None
+    fee_percentage: Optional[Decimal] = Field(default=Decimal("0.0"), ge=0, le=100)
+    fee_amount: Optional[Decimal] = Field(default=Decimal("0.0"), ge=0)
+    card_installments: Optional[int] = Field(default=1, ge=1, le=24)
 
 class DebtAmortizationRequest(BaseModel):
     extra_amount: Decimal = Field(..., gt=0)
     account_id: UUID
     strategy: str = Field("reduce_term", pattern="^(reduce_term|reduce_installment)$")
+    fee_percentage: Optional[Decimal] = Field(default=Decimal("0.0"), ge=0, le=100)
+    fee_amount: Optional[Decimal] = Field(default=Decimal("0.0"), ge=0)
+    card_installments: Optional[int] = Field(default=1, ge=1, le=24)
 
 class DebtResponse(BaseModel):
     id: UUID
