@@ -16,8 +16,8 @@ import {
   ArrowRightLeft,
   Settings2,
   Sparkles,
-  TrendingDown,
-  Lock
+  Layers,
+  Landmark
 } from "lucide-react";
 
 export default function AccountsPage() {
@@ -195,7 +195,7 @@ export default function AccountsPage() {
 
   return (
     <AppLayout>
-      <div className="space-y-6">
+      <div className="space-y-8 pb-12">
         {/* Notificação de Sucesso */}
         {successMessage && (
           <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-semibold flex items-center gap-2.5 animate-in fade-in">
@@ -204,11 +204,12 @@ export default function AccountsPage() {
           </div>
         )}
 
+        {/* Cabeçalho da Página */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-extrabold text-slate-900">Contas Bancárias & Cartões</h1>
             <p className="text-xs text-slate-500">
-              Acompanhe saldos reais, limites disponíveis e pagamentos de faturas
+              Gerencie seus bancos, saldos disponíveis, limites de cartões e faturas
             </p>
           </div>
           <button
@@ -225,10 +226,17 @@ export default function AccountsPage() {
 
         {/* SEÇÃO 1: CARTÕES DE CRÉDITO */}
         {creditCards.length > 0 && (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <CreditCard className="w-4 h-4 text-purple-600" />
-              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-600">Cartões de Crédito</h2>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center">
+                  <CreditCard className="w-4 h-4" />
+                </div>
+                <h2 className="text-sm font-extrabold uppercase tracking-wider text-slate-700">
+                  Cartões de Crédito ({creditCards.length})
+                </h2>
+              </div>
+              <span className="text-xs text-slate-400 font-medium">Controle de limites e faturas</span>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -238,90 +246,86 @@ export default function AccountsPage() {
                 const availableLimit = parseFloat(card.available_limit || 0);
                 const usedPercentage = totalLimit > 0 ? Math.min(100, Math.round((usedLimit / totalLimit) * 100)) : 0;
 
-                // Cores dinâmicas de uso
                 let progressColor = "bg-emerald-500";
-                let badgeColor = "text-emerald-700 bg-emerald-50 border-emerald-200";
-                if (usedPercentage > 80) {
-                  progressColor = "bg-red-500";
-                  badgeColor = "text-red-700 bg-red-50 border-red-200";
-                } else if (usedPercentage > 50) {
-                  progressColor = "bg-amber-500";
-                  badgeColor = "text-amber-700 bg-amber-50 border-amber-200";
-                }
+                if (usedPercentage > 80) progressColor = "bg-red-500";
+                else if (usedPercentage > 50) progressColor = "bg-amber-500";
 
                 return (
                   <div
                     key={card.id}
-                    className="p-6 rounded-3xl bg-white border border-purple-100 shadow-xs space-y-4 relative overflow-hidden"
+                    className="p-6 rounded-3xl bg-white border border-purple-100 shadow-xs flex flex-col justify-between space-y-4 relative overflow-hidden hover:border-purple-200 transition-all"
                   >
-                    {/* Barra de destaque superior roxa */}
-                    <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-purple-500 to-indigo-600" />
+                    {/* Barra de destaque superior */}
+                    <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-purple-500 to-indigo-600" />
 
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-10 h-10 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center">
-                          <CreditCard className="w-5 h-5" />
+                    <div className="space-y-4">
+                      {/* Topo do Card */}
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
+                            <CreditCard className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <h3 className="font-bold text-slate-900 text-base leading-snug">{card.name}</h3>
+                            <span className="text-[10px] uppercase font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-100">
+                              Cartão de Crédito
+                            </span>
+                          </div>
                         </div>
-                        <div>
-                          <h3 className="font-bold text-slate-900 text-base">{card.name}</h3>
-                          <span className="text-[10px] uppercase font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-100">
-                            Cartão de Crédito
+                        <button
+                          onClick={() => openEditAccountModal(card)}
+                          className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                          title="Ajustar Limite / Configurações"
+                        >
+                          <Settings2 className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      {/* Caixa de Limite Disponível */}
+                      <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-100/80 space-y-1">
+                        <span className="text-xs text-emerald-800 font-semibold block">Limite Disponível</span>
+                        <div className="text-2xl font-extrabold text-emerald-700 tracking-tight">
+                          R$ {availableLimit.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        </div>
+                      </div>
+
+                      {/* Barra de Progresso do Limite */}
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between text-xs font-semibold">
+                          <span className="text-slate-500">Limite Usado ({usedPercentage}%)</span>
+                          <span className="text-slate-800 font-bold">
+                            R$ {usedLimit.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                           </span>
                         </div>
+                        <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full ${progressColor} transition-all duration-500 rounded-full`}
+                            style={{ width: `${usedPercentage}%` }}
+                          />
+                        </div>
                       </div>
-                      <button
-                        onClick={() => openEditAccountModal(card)}
-                        className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-                        title="Ajustar Limite / Configurações"
-                      >
-                        <Settings2 className="w-4 h-4" />
-                      </button>
-                    </div>
 
-                    {/* Destaque: Limite Disponível */}
-                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
-                      <span className="text-xs text-slate-500 font-semibold block">Limite Disponível</span>
-                      <div className="text-2xl font-extrabold text-emerald-600">
-                        R$ {availableLimit.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                      </div>
-                    </div>
-
-                    {/* Barra de Progresso do Limite */}
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between text-xs font-semibold">
-                        <span className="text-slate-500">Limite Utilizado ({usedPercentage}%)</span>
-                        <span className="text-slate-700 font-mono">
-                          R$ {usedLimit.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                        </span>
-                      </div>
-                      <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full ${progressColor} transition-all duration-500 rounded-full`}
-                          style={{ width: `${usedPercentage}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Detalhes de Limite Total & Fatura */}
-                    <div className="pt-2 border-t border-slate-100 text-xs text-slate-500 space-y-1.5">
-                      <div className="flex justify-between">
-                        <span>Limite Total:</span>
-                        <span className="font-bold text-slate-800 font-mono">
-                          R$ {totalLimit.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Fechamento / Vencimento:</span>
-                        <span className="font-bold text-slate-800">
-                          Dia {card.closing_day || 5} • Dia {card.due_day || 12}
-                        </span>
+                      {/* Detalhes de Fechamento e Vencimento */}
+                      <div className="pt-3 border-t border-slate-100 text-xs text-slate-500 space-y-1.5">
+                        <div className="flex justify-between">
+                          <span>Limite Total:</span>
+                          <span className="font-bold text-slate-800">
+                            R$ {totalLimit.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Fechamento / Vencimento:</span>
+                          <span className="font-bold text-slate-800">
+                            Dia {card.closing_day || 5} • Dia {card.due_day || 12}
+                          </span>
+                        </div>
                       </div>
                     </div>
 
                     {/* Botão de Pagar Fatura */}
                     <button
                       onClick={() => openPayInvoiceModal(card)}
-                      className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-md shadow-purple-500/20 flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                      className="w-full mt-2 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-md shadow-purple-500/20 flex items-center justify-center gap-2 transition-colors cursor-pointer"
                     >
                       <ArrowRightLeft className="w-4 h-4" />
                       <span>Pagar Fatura do Cartão</span>
@@ -333,58 +337,74 @@ export default function AccountsPage() {
           </div>
         )}
 
-        {/* SEÇÃO 2: CONTAS BANCÁRIAS, CARTEIRAS & INVESTIMENTOS */}
-        <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Wallet className="w-4 h-4 text-emerald-600" />
-            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-600">
-              Contas Correntes, Carteiras & Investimentos
-            </h2>
+        {/* SEÇÃO 2: CONTAS BANCÁRIAS & CARTEIRAS */}
+        <div className="space-y-4 pt-6 border-t border-slate-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                <Landmark className="w-4 h-4" />
+              </div>
+              <h2 className="text-sm font-extrabold uppercase tracking-wider text-slate-700">
+                Contas Correntes, Carteiras & Investimentos ({bankAccounts.length})
+              </h2>
+            </div>
+            <span className="text-xs text-slate-400 font-medium">Saldos monetários líquidos</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {bankAccounts.map((acc) => (
-              <div key={acc.id} className="p-6 rounded-3xl bg-white border border-slate-200 shadow-xs space-y-4">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                      <Wallet className="w-5 h-5" />
+            {bankAccounts.map((acc) => {
+              const currentBal = parseFloat(acc.current_balance || 0);
+              const isNegative = currentBal < 0;
+
+              return (
+                <div
+                  key={acc.id}
+                  className="p-6 rounded-3xl bg-white border border-slate-200 shadow-xs flex flex-col justify-between space-y-4 hover:border-slate-300 transition-all"
+                >
+                  <div className="space-y-4">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                          <Wallet className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-slate-900 text-base leading-snug">{acc.name}</h3>
+                          <span className="text-[10px] uppercase font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                            {acc.type === "checking"
+                              ? "Conta Corrente"
+                              : acc.type === "investment"
+                              ? "Investimentos"
+                              : "Carteira / Dinheiro"}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => openEditAccountModal(acc)}
+                        className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                        title="Editar Conta"
+                      >
+                        <Settings2 className="w-4 h-4" />
+                      </button>
                     </div>
-                    <div>
-                      <h3 className="font-bold text-slate-900 text-base">{acc.name}</h3>
-                      <span className="text-[10px] uppercase font-bold text-slate-400">
-                        {acc.type === "checking"
-                          ? "Conta Corrente"
-                          : acc.type === "investment"
-                          ? "Investimentos"
-                          : "Carteira / Dinheiro"}
-                      </span>
+
+                    {/* Caixa de Saldo em Tempo Real */}
+                    <div className={`p-4 rounded-2xl ${isNegative ? "bg-red-50/70 border border-red-100" : "bg-slate-50 border border-slate-100"} space-y-1`}>
+                      <span className="text-xs text-slate-500 font-semibold block">Saldo em Tempo Real</span>
+                      <div className={`text-2xl font-extrabold ${isNegative ? "text-red-600" : "text-slate-900"} tracking-tight`}>
+                        R$ {currentBal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                      </div>
                     </div>
                   </div>
-                  <button
-                    onClick={() => openEditAccountModal(acc)}
-                    className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-                    title="Editar Conta"
-                  >
-                    <Settings2 className="w-4 h-4" />
-                  </button>
-                </div>
 
-                <div>
-                  <span className="text-xs text-slate-400 font-semibold block">Saldo em Tempo Real</span>
-                  <div className="text-2xl font-extrabold text-slate-900 mt-0.5 font-mono">
-                    R$ {parseFloat(acc.current_balance || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                  <div className="pt-3 border-t border-slate-100 text-xs text-slate-500 flex justify-between items-center">
+                    <span>Saldo Inicial:</span>
+                    <span className="font-bold text-slate-700">
+                      R$ {parseFloat(acc.initial_balance || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                    </span>
                   </div>
                 </div>
-
-                <div className="pt-3 border-t border-slate-100 text-xs text-slate-500 flex justify-between">
-                  <span>Saldo Inicial:</span>
-                  <span className="font-semibold text-slate-700 font-mono">
-                    R$ {parseFloat(acc.initial_balance || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -421,13 +441,13 @@ export default function AccountsPage() {
                 <div className="grid grid-cols-2 gap-3 p-3.5 rounded-2xl bg-purple-50/70 border border-purple-100 text-xs">
                   <div>
                     <span className="text-purple-700 font-semibold block">Limite Usado (Fatura):</span>
-                    <span className="text-base font-extrabold text-purple-950 font-mono">
+                    <span className="text-base font-extrabold text-purple-950">
                       R$ {parseFloat(selectedCardForPayment.used_limit || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                     </span>
                   </div>
                   <div>
                     <span className="text-purple-700 font-semibold block">Limite Total:</span>
-                    <span className="text-base font-extrabold text-slate-800 font-mono">
+                    <span className="text-base font-extrabold text-slate-800">
                       R$ {parseFloat(selectedCardForPayment.credit_limit || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                     </span>
                   </div>
@@ -463,7 +483,7 @@ export default function AccountsPage() {
                       onChange={(e) => setPaymentAmount(e.target.value)}
                       required
                       placeholder="0.00"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-mono font-bold text-slate-900 focus:ring-2 focus:ring-purple-500"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-bold text-slate-900 focus:ring-2 focus:ring-purple-500"
                     />
                   </div>
 
@@ -482,9 +502,9 @@ export default function AccountsPage() {
                 {/* Simulação do Novo Limite */}
                 {parseFloat(paymentAmount) > 0 && (
                   <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 space-y-1">
-                    <div className="flex justify-between font-semibold">
+                    <div className="flex justify-between font-semibold items-center">
                       <span>Novo Limite Disponível Estimado:</span>
-                      <span className="font-extrabold text-sm text-emerald-700 font-mono">
+                      <span className="font-extrabold text-sm text-emerald-700">
                         R${" "}
                         {Math.min(
                           parseFloat(selectedCardForPayment.credit_limit || 0),
@@ -567,7 +587,7 @@ export default function AccountsPage() {
                         value={editCreditLimit}
                         onChange={(e) => setEditCreditLimit(e.target.value)}
                         placeholder="6200.00"
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-purple-200 text-sm font-mono bg-purple-50/50"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-purple-200 text-sm bg-purple-50/50"
                       />
                     </div>
 
@@ -586,7 +606,7 @@ export default function AccountsPage() {
                         value={editAdjustedAvailableLimit}
                         onChange={(e) => setEditAdjustedAvailableLimit(e.target.value)}
                         placeholder="Ex: 5800.00"
-                        className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-sm font-mono font-bold bg-white text-emerald-600"
+                        className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-sm font-bold bg-white text-emerald-600"
                       />
                     </div>
 
@@ -623,7 +643,7 @@ export default function AccountsPage() {
                       step="0.01"
                       value={editInitialBalance}
                       onChange={(e) => setEditInitialBalance(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-mono"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm"
                     />
                   </div>
                 )}
@@ -714,7 +734,7 @@ export default function AccountsPage() {
                         onChange={(e) => setCreditLimit(e.target.value)}
                         placeholder="6200.00"
                         required
-                        className="w-full px-3 py-2 rounded-xl border border-purple-200 text-sm bg-white font-mono font-bold"
+                        className="w-full px-3 py-2 rounded-xl border border-purple-200 text-sm bg-white font-bold"
                       />
                     </div>
                     <div>
@@ -725,7 +745,7 @@ export default function AccountsPage() {
                         value={initialBalance}
                         onChange={(e) => setInitialBalance(e.target.value)}
                         placeholder="0.00"
-                        className="w-full px-3 py-2 rounded-xl border border-purple-200 text-sm bg-white font-mono"
+                        className="w-full px-3 py-2 rounded-xl border border-purple-200 text-sm bg-white"
                       />
                     </div>
                     <div className="grid grid-cols-2 gap-2">
@@ -762,7 +782,7 @@ export default function AccountsPage() {
                       value={initialBalance}
                       onChange={(e) => setInitialBalance(e.target.value)}
                       placeholder="0.00"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-mono"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm"
                     />
                   </div>
                 )}
@@ -781,4 +801,5 @@ export default function AccountsPage() {
     </AppLayout>
   );
 }
+
 
