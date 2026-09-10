@@ -27,7 +27,8 @@ from app.models import (
     TransactionType,
     EssentialityGrade,
     TransactionStatus,
-    RecurringBill
+    RecurringBill,
+    Debt
 )
 from app.schemas.financial import (
     AccountCreateRequest,
@@ -1124,6 +1125,17 @@ async def confirm_transaction(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transação não encontrada.")
 
     tx.status = TransactionStatus.PAID
+
+    if tx.type == TransactionType.DEBT_PAYMENT and tx.series_id:
+        stmt_debt = select(Debt).where(
+            Debt.id == tx.series_id,
+            Debt.workspace_id == workspace_id
+        )
+        debt = (await db.execute(stmt_debt)).scalar_one_or_none()
+        if debt:
+            debt.current_balance = max(Decimal("0.00"), debt.current_balance - tx.amount)
+            debt.remaining_installments = max(0, debt.remaining_installments - 1)
+
     await db.commit()
     await db.refresh(tx)
     return build_tx_response(tx, tags=tx.tags)

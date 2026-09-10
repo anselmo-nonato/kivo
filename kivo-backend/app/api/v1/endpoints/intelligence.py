@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from sqlalchemy import func
+from sqlalchemy import func, delete, or_
 from typing import Optional, List
 from uuid import UUID
 from datetime import date, datetime, timezone
@@ -10,6 +10,7 @@ from dateutil.relativedelta import relativedelta
 from decimal import Decimal
 import uuid
 import math
+import calendar
 
 from app.core.database import get_db
 from app.models import (
@@ -21,6 +22,8 @@ from app.models import (
     Category,
     Transaction,
     Debt,
+    Account,
+    AccountType,
     TransactionType,
     EssentialityGrade,
     TransactionStatus
@@ -155,7 +158,13 @@ async def calculate_couple_equalization(
 
 # ==================== 2. DÍVIDAS & AMORTIZAÇÃO (ISSUE #9) ====================
 
-def build_debt_response(d: Debt) -> DebtResponse:
+async def build_debt_response(d: Debt, db: AsyncSession) -> DebtResponse:
+    stmt_tx_count = select(func.count(Transaction.id)).where(
+        Transaction.workspace_id == d.workspace_id,
+        Transaction.series_id == d.id
+    )
+    count = (await db.execute(stmt_tx_count)).scalar() or 0
+
     return DebtResponse(
         id=d.id,
         workspace_id=d.workspace_id,
@@ -169,9 +178,125 @@ def build_debt_response(d: Debt) -> DebtResponse:
         remaining_installments=d.remaining_installments,
         due_day=d.due_day,
         start_date=d.start_date,
+        has_synced_transactions=count > 0,
+        synced_transactions_count=count,
         created_at=d.created_at,
         updated_at=d.updated_at
     )
+
+
+async def generate_or_sync_debt_transactions(
+    db: AsyncSession,
+    workspace_id: UUID,
+    debt: Debt,
+    account_id: Optional[UUID] = None
+) -> int:
+    """
+    Gera ou sincroniza as parcelas futuras da dívida como transações pendentes no Extrato.
+    """
+    # 1. Carrega conta para débito
+    if not account_id:
+        stmt_acc = select(Account).where(
+            Account.workspace_id == workspace_id,
+            Account.type == AccountType.CHECKING,
+            Account.is_active == True
+        )
+        acc = (await db.execute(stmt_acc)).scalars().first()
+        if not acc:
+            stmt_any_acc = select(Account).where(
+                Account.workspace_id == workspace_id,
+                Account.is_active == True
+            )
+            acc = (await db.execute(stmt_any_acc)).scalars().first()
+        if acc:
+            account_id = acc.id
+
+    if not account_id:
+        return 0
+
+    # 2. Localiza ou cria categoria de Dívidas
+    stmt_cat = select(Category).where(
+        Category.workspace_id == workspace_id,
+        or_(Category.name.ilike("%Dívida%"), Category.name.ilike("%Divida%"), Category.name.ilike("%Juros%"))
+    )
+    cat = (await db.execute(stmt_cat)).scalars().first()
+    if not cat:
+        stmt_any_cat = select(Category).where(Category.workspace_id == workspace_id)
+        cat = (await db.execute(stmt_any_cat)).scalars().first()
+
+    # 3. Centro de Custo padrão
+    stmt_cc = select(CostCenter).where(CostCenter.workspace_id == workspace_id)
+    cc = (await db.execute(stmt_cc)).scalars().first()
+
+    # 4. Remove transações pendentes anteriores vinculadas a este debt.id
+    stmt_del_pending = delete(Transaction).where(
+        Transaction.workspace_id == workspace_id,
+        Transaction.series_id == debt.id,
+        Transaction.status == TransactionStatus.PENDING
+    )
+    await db.execute(stmt_del_pending)
+
+    # 5. Descobre quantas já foram pagas anteriormente
+    stmt_paid_count = select(func.count(Transaction.id)).where(
+        Transaction.workspace_id == workspace_id,
+        Transaction.series_id == debt.id,
+        Transaction.status == TransactionStatus.PAID
+    )
+    already_paid_count = (await db.execute(stmt_paid_count)).scalar() or 0
+
+    # 6. Gera as parcelas restantes a partir de start_date / mês atual
+    created_count = 0
+    start_dt = debt.start_date or date.today()
+    total_installments = already_paid_count + debt.remaining_installments
+
+    for i in range(1, debt.remaining_installments + 1):
+        inst_idx = already_paid_count + i
+        base_month_dt = start_dt + relativedelta(months=i - 1)
+        max_days = calendar.monthrange(base_month_dt.year, base_month_dt.month)[1]
+        target_day = min(debt.due_day, max_days)
+        due_date = date(base_month_dt.year, base_month_dt.month, target_day)
+
+        tx = Transaction(
+            id=uuid.uuid4(),
+            workspace_id=workspace_id,
+            account_id=account_id,
+            paid_by_member_id=debt.member_id,
+            cost_center_id=cc.id if cc else None,
+            category_id=cat.id if cat else None,
+            amount=debt.installment_amount,
+            type=TransactionType.DEBT_PAYMENT,
+            essentiality=EssentialityGrade.DEBT,
+            transaction_date=due_date,
+            description=f"Parcela Dívida - {debt.creditor_name} ({inst_idx}/{total_installments})",
+            status=TransactionStatus.PENDING,
+            series_id=debt.id,
+            installment_current=inst_idx,
+            installment_total=total_installments,
+            notes=f"[debt_id:{debt.id}]"
+        )
+        db.add(tx)
+        created_count += 1
+
+    await db.flush()
+    return created_count
+
+
+async def delete_debt_transactions(
+    db: AsyncSession,
+    workspace_id: UUID,
+    debt_id: UUID
+) -> int:
+    """
+    Remove transações pendentes vinculadas a uma dívida do Extrato.
+    """
+    stmt_del = delete(Transaction).where(
+        Transaction.workspace_id == workspace_id,
+        Transaction.series_id == debt_id,
+        Transaction.status == TransactionStatus.PENDING
+    )
+    result = await db.execute(stmt_del)
+    await db.flush()
+    return result.rowcount
 
 
 @router.get("/{workspace_id}/debts", response_model=List[DebtResponse], summary="Listar Dívidas / Passivos")
@@ -183,7 +308,7 @@ async def list_debts(
     await get_workspace_membership(workspace_id, current_user.id, db)
     stmt = select(Debt).where(Debt.workspace_id == workspace_id).order_by(Debt.monthly_interest_rate.desc())
     debts = (await db.execute(stmt)).scalars().all()
-    return [build_debt_response(d) for d in debts]
+    return [await build_debt_response(d, db) for d in debts]
 
 
 @router.post("/{workspace_id}/debts", response_model=DebtResponse, status_code=status.HTTP_201_CREATED, summary="Cadastrar Dívida")
@@ -209,9 +334,55 @@ async def create_debt(
         start_date=req.start_date or date.today()
     )
     db.add(debt)
+    await db.flush()
+
+    if req.generate_transactions is not False and debt.remaining_installments > 0:
+        await generate_or_sync_debt_transactions(db, workspace_id, debt, req.account_id)
+
     await db.commit()
     await db.refresh(debt)
-    return build_debt_response(debt)
+    return await build_debt_response(debt, db)
+
+
+@router.post("/{workspace_id}/debts/{debt_id}/sync-transactions", response_model=DebtResponse, summary="Sincronizar / Gerar Lançamentos no Extrato")
+async def sync_debt_transactions(
+    workspace_id: UUID,
+    debt_id: UUID,
+    account_id: Optional[UUID] = Query(None, description="Conta para débito das parcelas"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    await get_workspace_membership(workspace_id, current_user.id, db)
+
+    stmt = select(Debt).where(Debt.id == debt_id, Debt.workspace_id == workspace_id)
+    debt = (await db.execute(stmt)).scalar_one_or_none()
+    if not debt:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dívida não encontrada.")
+
+    await generate_or_sync_debt_transactions(db, workspace_id, debt, account_id)
+    await db.commit()
+    await db.refresh(debt)
+    return await build_debt_response(debt, db)
+
+
+@router.delete("/{workspace_id}/debts/{debt_id}/transactions", response_model=DebtResponse, summary="Limpar Lançamentos Pendentes do Extrato")
+async def clear_debt_transactions(
+    workspace_id: UUID,
+    debt_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    await get_workspace_membership(workspace_id, current_user.id, db)
+
+    stmt = select(Debt).where(Debt.id == debt_id, Debt.workspace_id == workspace_id)
+    debt = (await db.execute(stmt)).scalar_one_or_none()
+    if not debt:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dívida não encontrada.")
+
+    await delete_debt_transactions(db, workspace_id, debt_id)
+    await db.commit()
+    await db.refresh(debt)
+    return await build_debt_response(debt, db)
 
 
 @router.post("/{workspace_id}/debts/{debt_id}/amortize", response_model=DebtResponse, summary="Amortização Extraordinária de Dívida")
@@ -289,9 +460,18 @@ async def amortize_debt(
         )
         db.add(tx)
 
+    # 4. Sincroniza as parcelas pendentes da dívida após amortização
+    stmt_has_sync = select(Transaction.id).where(
+        Transaction.workspace_id == workspace_id,
+        Transaction.series_id == debt.id,
+        Transaction.status == TransactionStatus.PENDING
+    )
+    if (await db.execute(stmt_has_sync)).first():
+        await generate_or_sync_debt_transactions(db, workspace_id, debt, req.account_id)
+
     await db.commit()
     await db.refresh(debt)
-    return build_debt_response(debt)
+    return await build_debt_response(debt, db)
 
 
 @router.put("/{workspace_id}/debts/{debt_id}", response_model=DebtResponse, summary="Atualizar Dívida / Contrato")
@@ -326,9 +506,14 @@ async def update_debt(
     if req.start_date is not None:
         debt.start_date = req.start_date
 
+    if req.sync_transactions is True:
+        await generate_or_sync_debt_transactions(db, workspace_id, debt, req.account_id)
+    elif req.sync_transactions is False:
+        await delete_debt_transactions(db, workspace_id, debt.id)
+
     await db.commit()
     await db.refresh(debt)
-    return build_debt_response(debt)
+    return await build_debt_response(debt, db)
 
 
 @router.delete("/{workspace_id}/debts/{debt_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Excluir Dívida")
@@ -344,6 +529,9 @@ async def delete_debt(
     debt = (await db.execute(stmt)).scalar_one_or_none()
     if not debt:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dívida não encontrada.")
+
+    # Remove lançamentos pendentes vinculados à dívida
+    await delete_debt_transactions(db, workspace_id, debt_id)
 
     await db.delete(debt)
     await db.commit()
@@ -391,35 +579,54 @@ async def pay_debt_installment(
     series_id = uuid.uuid4() if installments_count > 1 else None
     inst_amount = round(total_charged / Decimal(str(installments_count)), 2)
 
-    for i in range(1, installments_count + 1):
-        t_date = pay_date + relativedelta(months=i - 1)
-        desc = f"{desc_prefix} ({i}/{installments_count})" if installments_count > 1 else desc_prefix
-        tx = Transaction(
-            id=uuid.uuid4(),
-            workspace_id=workspace_id,
-            account_id=req.account_id,
-            paid_by_member_id=debt.member_id,
-            cost_center_id=cc.id if cc else None,
-            category_id=cat.id if cat else None,
-            amount=inst_amount,
-            type=TransactionType.DEBT_PAYMENT,
-            essentiality=EssentialityGrade.DEBT,
-            transaction_date=t_date,
-            description=desc,
-            status=TransactionStatus.PAID if i == 1 else TransactionStatus.PENDING,
-            series_id=series_id,
-            installment_current=i,
-            installment_total=installments_count
-        )
-        db.add(tx)
+    # 3. Verifica se já existe transação pendente vinculada no Extrato para este mês/parcela
+    stmt_earliest_pending = select(Transaction).where(
+        Transaction.workspace_id == workspace_id,
+        Transaction.series_id == debt.id,
+        Transaction.status == TransactionStatus.PENDING
+    ).order_by(Transaction.transaction_date.asc())
+    existing_pending = (await db.execute(stmt_earliest_pending)).scalars().first()
 
-    # 3. Abate do saldo e do prazo pelo valor nominal da parcela
+    if existing_pending and installments_count == 1:
+        # Dá baixa na transação pendente existente
+        existing_pending.status = TransactionStatus.PAID
+        existing_pending.transaction_date = pay_date
+        existing_pending.account_id = req.account_id
+        existing_pending.amount = inst_amount
+    else:
+        # Se for parcelado ou não existir pendente, remove a primeira pendente se houver e cria as novas
+        if existing_pending:
+            await db.delete(existing_pending)
+
+        for i in range(1, installments_count + 1):
+            t_date = pay_date + relativedelta(months=i - 1)
+            desc = f"{desc_prefix} ({i}/{installments_count})" if installments_count > 1 else desc_prefix
+            tx = Transaction(
+                id=uuid.uuid4(),
+                workspace_id=workspace_id,
+                account_id=req.account_id,
+                paid_by_member_id=debt.member_id,
+                cost_center_id=cc.id if cc else None,
+                category_id=cat.id if cat else None,
+                amount=inst_amount,
+                type=TransactionType.DEBT_PAYMENT,
+                essentiality=EssentialityGrade.DEBT,
+                transaction_date=t_date,
+                description=desc,
+                status=TransactionStatus.PAID if i == 1 else TransactionStatus.PENDING,
+                series_id=series_id,
+                installment_current=i,
+                installment_total=installments_count
+            )
+            db.add(tx)
+
+    # 4. Abate do saldo e do prazo pelo valor nominal da parcela
     debt.current_balance = max(Decimal("0.00"), debt.current_balance - pay_amount)
     debt.remaining_installments = max(0, debt.remaining_installments - 1)
 
     await db.commit()
     await db.refresh(debt)
-    return build_debt_response(debt)
+    return await build_debt_response(debt, db)
 
 
 # ==================== 3. SIMULADOR AVALANCHE VS. BOLA DE NEVE (ISSUE #10) ====================

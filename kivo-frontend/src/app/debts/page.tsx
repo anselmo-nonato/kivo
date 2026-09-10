@@ -20,7 +20,10 @@ import {
   CheckCircle,
   CreditCard,
   Percent,
-  Info
+  Info,
+  RefreshCw,
+  CalendarCheck,
+  Layers
 } from "lucide-react";
 
 export default function DebtsPage() {
@@ -29,6 +32,7 @@ export default function DebtsPage() {
   const [simulation, setSimulation] = useState<any>(null);
   const [extraBudget, setExtraBudget] = useState("500");
   const [loading, setLoading] = useState(true);
+  const [feedbackMessage, setFeedbackMessage] = useState("");
 
   // Modais
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -63,6 +67,8 @@ export default function DebtsPage() {
   const [dueDay, setDueDay] = useState("10");
   const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
   const [memberId, setMemberId] = useState("");
+  const [debtAccountId, setDebtAccountId] = useState("");
+  const [generateTransactions, setGenerateTransactions] = useState(true);
   const [members, setMembers] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
   const [error, setError] = useState("");
@@ -84,7 +90,10 @@ export default function DebtsPage() {
       setAccounts(accRes.data);
 
       if (wsRes.data.members?.length > 0) setMemberId(wsRes.data.members[0].id);
-      if (accRes.data.length > 0) setPayAccountId(accRes.data[0].id);
+      if (accRes.data.length > 0) {
+        setPayAccountId(accRes.data[0].id);
+        setDebtAccountId(accRes.data[0].id);
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -106,6 +115,7 @@ export default function DebtsPage() {
     setRemainingInstallments(debt.remaining_installments);
     setDueDay(debt.due_day);
     setStartDate(debt.start_date || new Date().toISOString().slice(0, 10));
+    setGenerateTransactions(debt.has_synced_transactions || true);
     setIsEditModalOpen(true);
   };
 
@@ -130,10 +140,14 @@ export default function DebtsPage() {
         remaining_installments: parseInt(remainingInstallments),
         due_day: parseInt(dueDay),
         start_date: startDate,
+        account_id: debtAccountId || undefined,
+        generate_transactions: generateTransactions,
       });
 
       setIsCreateModalOpen(false);
       resetForm();
+      setFeedbackMessage("Dívida cadastrada e parcelas sincronizadas no Extrato!");
+      setTimeout(() => setFeedbackMessage(""), 4000);
       loadData();
     } catch (err: any) {
       setError(err.response?.data?.detail || "Erro ao cadastrar dívida.");
@@ -154,18 +168,54 @@ export default function DebtsPage() {
         remaining_installments: parseInt(remainingInstallments),
         due_day: parseInt(dueDay),
         start_date: startDate,
+        account_id: debtAccountId || undefined,
+        sync_transactions: generateTransactions,
       });
 
       setIsEditModalOpen(false);
       resetForm();
+      setFeedbackMessage("Dívida atualizada e lançamentos sincronizados no Extrato!");
+      setTimeout(() => setFeedbackMessage(""), 4000);
       loadData();
     } catch (err: any) {
       setError(err.response?.data?.detail || "Erro ao atualizar dívida.");
     }
   };
 
+  const handleSyncDebtTransactions = async (debt: any) => {
+    try {
+      await api.post(
+        `/workspaces/${activeWorkspace?.id}/debts/${debt.id}/sync-transactions${
+          debtAccountId ? `?account_id=${debtAccountId}` : ""
+        }`
+      );
+      setFeedbackMessage(`Lançamentos da dívida "${debt.creditor_name}" sincronizados com sucesso no Extrato!`);
+      setTimeout(() => setFeedbackMessage(""), 4000);
+      loadData();
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "Erro ao sincronizar lançamentos no extrato.");
+    }
+  };
+
+  const handleClearDebtTransactions = async (debt: any) => {
+    if (
+      !confirm(
+        `Deseja limpar todos os lançamentos futuros pendentes da dívida "${debt.creditor_name}" do Extrato? O contrato continuará ativo.`
+      )
+    )
+      return;
+    try {
+      await api.delete(`/workspaces/${activeWorkspace?.id}/debts/${debt.id}/transactions`);
+      setFeedbackMessage(`Lançamentos pendentes da dívida "${debt.creditor_name}" removidos do Extrato.`);
+      setTimeout(() => setFeedbackMessage(""), 4000);
+      loadData();
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "Erro ao limpar lançamentos do extrato.");
+    }
+  };
+
   const handleDeleteDebt = async (debtId: string) => {
-    if (!confirm("Tem certeza que deseja excluir este contrato de dívida?")) return;
+    if (!confirm("Tem certeza que deseja excluir este contrato de dívida e seus lançamentos futuros?")) return;
     try {
       await api.delete(`/workspaces/${activeWorkspace?.id}/debts/${debtId}`);
       loadData();
@@ -193,6 +243,8 @@ export default function DebtsPage() {
       });
 
       setIsPayInstallmentModalOpen(false);
+      setFeedbackMessage("Pagamento de parcela confirmado e saldo atualizado!");
+      setTimeout(() => setFeedbackMessage(""), 4000);
       loadData();
     } catch (err: any) {
       setError(err.response?.data?.detail || "Erro ao registrar pagamento da parcela.");
@@ -220,6 +272,8 @@ export default function DebtsPage() {
 
       setIsAmortizeModalOpen(false);
       setAmortizeAmount("");
+      setFeedbackMessage("Amortização extraordinária processada com sucesso!");
+      setTimeout(() => setFeedbackMessage(""), 4000);
       loadData();
     } catch (err: any) {
       setError(err.response?.data?.detail || "Erro ao amortizar dívida.");
@@ -234,6 +288,7 @@ export default function DebtsPage() {
     setInstallmentAmount("");
     setRemainingInstallments("12");
     setDueDay("10");
+    setGenerateTransactions(true);
     setSelectedDebt(null);
   };
 
@@ -256,12 +311,21 @@ export default function DebtsPage() {
 
   return (
     <AppLayout>
-      <div className="space-y-8">
+      <div className="space-y-6">
+        {/* Notificação de Sucesso */}
+        {feedbackMessage && (
+          <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs sm:text-sm font-semibold flex items-center gap-2.5 animate-in fade-in">
+            <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{feedbackMessage}</span>
+          </div>
+        )}
+
+        {/* Top Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-extrabold text-slate-900">Passivos & Quitação Inteligente</h1>
             <p className="text-xs text-slate-500">
-              Controle de dívidas, pagamento de parcelas, edição de contratos e simulador comparativo
+              Controle de dívidas, sincronização com extrato/previsão futura e simulador de amortização
             </p>
           </div>
           <button
@@ -277,87 +341,135 @@ export default function DebtsPage() {
         </div>
 
         {/* Tabela de Dívidas Ativas */}
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-xs overflow-hidden">
-          <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-            <h3 className="font-bold text-slate-900 text-lg">Contratos de Dívidas e Passivos</h3>
-            <span className="text-xs font-semibold text-slate-400">{debts.length} contratos</span>
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+          <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between">
+            <div>
+              <h3 className="font-bold text-slate-900 text-base">Contratos de Dívidas e Passivos</h3>
+              <p className="text-xs text-slate-400">Parcelas gerenciadas e sincronizadas com seu fluxo de caixa</p>
+            </div>
+            <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg">
+              {debts.length} {debts.length === 1 ? "contrato" : "contratos"}
+            </span>
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs text-slate-600">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider">
+              <thead className="bg-slate-50/90 border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
                 <tr>
-                  <th className="py-3.5 px-4">Credor / Contrato</th>
-                  <th className="py-3.5 px-4">Taxa de Juros (a.m.)</th>
-                  <th className="py-3.5 px-4">Parcela Mensal</th>
-                  <th className="py-3.5 px-4">Prazo Restante</th>
-                  <th className="py-3.5 px-4">Saldo Devedor</th>
-                  <th className="py-3.5 px-4 text-right">Ações</th>
+                  <th className="py-3 px-4">Credor / Contrato</th>
+                  <th className="py-3 px-4">Status no Extrato</th>
+                  <th className="py-3 px-4">Taxa Juros (a.m.)</th>
+                  <th className="py-3 px-4">Parcela Mensal</th>
+                  <th className="py-3 px-4">Prazo Restante</th>
+                  <th className="py-3 px-4">Saldo Devedor</th>
+                  <th className="py-3 px-4 text-right">Ações & Sincronização</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
-                {debts.map((d) => (
-                  <tr key={d.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="py-3.5 px-4">
-                      <span className="font-bold text-slate-900 block">{d.creditor_name}</span>
-                      <span className="text-[10px] text-slate-400">
-                        {d.start_date ? `Início: ${d.start_date} • ` : ""}Vencimento: dia {d.due_day}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4 font-mono font-bold text-red-600">
-                      {d.monthly_interest_rate_percentage}% a.m.
-                    </td>
-                    <td className="py-3.5 px-4 font-mono text-slate-700">
-                      R$ {parseFloat(d.installment_amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                    </td>
-                    <td className="py-3.5 px-4 font-mono text-slate-500">{d.remaining_installments} meses</td>
-                    <td className="py-3.5 px-4 font-mono font-extrabold text-slate-900">
-                      R$ {parseFloat(d.current_balance).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                    </td>
-                    <td className="py-3.5 px-4 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        {/* Botão Pagar Parcela */}
-                        <button
-                          onClick={() => handleOpenPayInstallment(d)}
-                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer flex items-center gap-1"
-                          title="Lançar Pagamento de Parcela"
-                        >
-                          <CheckCircle className="w-3.5 h-3.5" />
-                          <span>Pagar Parcela</span>
-                        </button>
-
-                        {/* Botão Amortizar */}
-                        <button
-                          onClick={() => {
-                            setSelectedDebt(d);
-                            setIsAmortizeModalOpen(true);
-                          }}
-                          className="px-2.5 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs border border-emerald-200 transition-colors cursor-pointer"
-                        >
-                          Amortizar
-                        </button>
-
-                        {/* Botão Editar */}
-                        <button
-                          onClick={() => handleOpenEdit(d)}
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
-                          title="Editar / Corrigir Dívida"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </button>
-
-                        {/* Botão Excluir */}
-                        <button
-                          onClick={() => handleDeleteDebt(d.id)}
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
-                          title="Excluir Dívida"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
+                {debts.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-slate-400">
+                      Nenhuma dívida ou passivo cadastrado no momento.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  debts.map((d) => (
+                    <tr key={d.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3 px-4">
+                        <span className="font-bold text-slate-900 block text-xs">{d.creditor_name}</span>
+                        <span className="text-[10px] text-slate-400">
+                          {d.start_date ? `Início: ${d.start_date} • ` : ""}Vencimento: todo dia {d.due_day}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        {d.has_synced_transactions ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                            <CalendarCheck className="w-3 h-3 text-indigo-500" />
+                            <span>No Extrato ({d.synced_transactions_count}p)</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-500">
+                            <span>⚠️ Fora do Extrato</span>
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 font-mono font-bold text-red-600 whitespace-nowrap">
+                        {d.monthly_interest_rate_percentage}% a.m.
+                      </td>
+                      <td className="py-3 px-4 font-mono text-slate-700 whitespace-nowrap">
+                        R$ {parseFloat(d.installment_amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="py-3 px-4 font-mono text-slate-500 whitespace-nowrap">
+                        {d.remaining_installments} meses
+                      </td>
+                      <td className="py-3 px-4 font-mono font-extrabold text-slate-900 whitespace-nowrap">
+                        R$ {parseFloat(d.current_balance).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {/* Botão Sincronizar Lançamentos */}
+                          <button
+                            onClick={() => handleSyncDebtTransactions(d)}
+                            className="p-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-colors cursor-pointer"
+                            title="Sincronizar / Atualizar Lançamentos no Extrato"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Botão Limpar Lançamentos se sincronizado */}
+                          {d.has_synced_transactions && (
+                            <button
+                              onClick={() => handleClearDebtTransactions(d)}
+                              className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors cursor-pointer"
+                              title="Limpar lançamentos desta dívida do Extrato"
+                            >
+                              <Layers className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+
+                          {/* Botão Pagar Parcela */}
+                          <button
+                            onClick={() => handleOpenPayInstallment(d)}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs transition-colors cursor-pointer flex items-center gap-1"
+                            title="Lançar Pagamento de Parcela"
+                          >
+                            <CheckCircle className="w-3 h-3" />
+                            <span>Pagar</span>
+                          </button>
+
+                          {/* Botão Amortizar */}
+                          <button
+                            onClick={() => {
+                              setSelectedDebt(d);
+                              setIsAmortizeModalOpen(true);
+                            }}
+                            className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs border border-emerald-200 transition-colors cursor-pointer"
+                          >
+                            Amortizar
+                          </button>
+
+                          {/* Botão Editar */}
+                          <button
+                            onClick={() => handleOpenEdit(d)}
+                            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
+                            title="Editar / Corrigir Dívida"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Botão Excluir */}
+                          <button
+                            onClick={() => handleDeleteDebt(d.id)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                            title="Excluir Dívida"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -452,11 +564,6 @@ export default function DebtsPage() {
               </div>
             </div>
           </div>
-
-          <div className="p-4 rounded-2xl bg-slate-800/80 border border-slate-700 text-xs text-emerald-300 flex items-center gap-2">
-            <Sparkles className="w-4 h-4 shrink-0 text-emerald-400" />
-            <span>{simulation?.recommendation}</span>
-          </div>
         </div>
 
         {/* Modal: Pagar Parcela */}
@@ -470,22 +577,8 @@ export default function DebtsPage() {
                 <X className="w-5 h-5" />
               </button>
 
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
-                  <CheckCircle className="w-6 h-6" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-bold text-slate-900">Pagar Parcela de Dívida</h2>
-                  <p className="text-xs text-slate-500">{selectedDebt.creditor_name}</p>
-                </div>
-              </div>
-
-              {error && (
-                <div className="p-3 rounded-xl bg-red-50 text-red-700 text-xs font-semibold flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4" />
-                  <span>{error}</span>
-                </div>
-              )}
+              <h2 className="text-lg font-bold text-slate-900">Pagar Parcela de Dívida</h2>
+              <p className="text-xs text-slate-500">{selectedDebt.creditor_name}</p>
 
               <form onSubmit={handlePayInstallment} className="space-y-4">
                 <div>
@@ -613,7 +706,7 @@ export default function DebtsPage() {
                   {isPayAccountCreditCard && payHasCardFee ? (
                     <p className="text-blue-700 font-semibold">• A fatura do cartão herdará o valor total com a taxa aplicada (R$ {payTotalCard.toFixed(2)}).</p>
                   ) : (
-                    <p>• Esta ação criará um lançamento de despesa no extrato da conta.</p>
+                    <p>• Esta ação atualizará o status da parcela no extrato para Pago.</p>
                   )}
                 </div>
 
@@ -779,13 +872,13 @@ export default function DebtsPage() {
         {/* Modal: Criar / Editar Dívida */}
         {(isCreateModalOpen || isEditModalOpen) && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in">
-            <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5 relative">
+            <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5 relative max-h-[90vh] overflow-y-auto">
               <button
                 onClick={() => {
                   setIsCreateModalOpen(false);
                   setIsEditModalOpen(false);
                 }}
-                className="absolute top-5 right-5 p-2 rounded-full hover:bg-slate-100 text-slate-400"
+                className="absolute top-5 right-5 p-2 rounded-full hover:bg-slate-100 text-slate-400 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -796,7 +889,7 @@ export default function DebtsPage() {
 
               {error && (
                 <div className="p-3 rounded-xl bg-red-50 text-red-700 text-xs font-semibold flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4" />
+                  <AlertCircle className="w-4 h-4 shrink-0" />
                   <span>{error}</span>
                 </div>
               )}
@@ -808,9 +901,9 @@ export default function DebtsPage() {
                     type="text"
                     value={creditorName}
                     onChange={(e) => setCreditorName(e.target.value)}
-                    placeholder="Ex: Loft Fiança (Seguro Aluguel)..."
+                    placeholder="Ex: Empréstimo Pessoal, Loft Fiança..."
                     required
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-semibold"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-semibold focus:ring-2 focus:ring-red-500"
                   />
                 </div>
 
@@ -870,7 +963,7 @@ export default function DebtsPage() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Data de Início / Contratação</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Data Início / Contratação</label>
                     <input
                       type="date"
                       value={startDate}
@@ -892,11 +985,42 @@ export default function DebtsPage() {
                   </div>
                 </div>
 
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Conta de Débito das Parcelas</label>
+                  <select
+                    value={debtAccountId}
+                    onChange={(e) => setDebtAccountId(e.target.value)}
+                    className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-semibold bg-white"
+                  >
+                    {accounts.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.type === "credit_card" ? "💳 Cartão: " : "🏦 Conta: "}
+                        {a.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl space-y-1">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-indigo-900">
+                    <input
+                      type="checkbox"
+                      checked={generateTransactions}
+                      onChange={(e) => setGenerateTransactions(e.target.checked)}
+                      className="rounded text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span>Gerar lançamentos no Extrato / Previsão Futura</span>
+                  </label>
+                  <p className="text-[11px] text-indigo-700 leading-relaxed pl-6">
+                    As {remainingInstallments || "12"} parcelas serão criadas como <b>A Pagar (Pendente)</b> em cada mês futuro na data de vencimento.
+                  </p>
+                </div>
+
                 <button
                   type="submit"
                   className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md shadow-emerald-500/20 transition-colors cursor-pointer"
                 >
-                  {isEditModalOpen ? "Salvar Alterações" : "Salvar Dívida"}
+                  {isEditModalOpen ? "Salvar e Sincronizar" : "Salvar e Gerar Lançamentos"}
                 </button>
               </form>
             </div>

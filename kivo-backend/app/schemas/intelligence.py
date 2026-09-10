@@ -45,6 +45,8 @@ class DebtCreateRequest(BaseModel):
     remaining_installments: int = Field(..., ge=1)
     due_day: int = Field(..., ge=1, le=31)
     start_date: Optional[date] = None
+    account_id: Optional[UUID] = None
+    generate_transactions: Optional[bool] = True
 
 class DebtUpdateRequest(BaseModel):
     creditor_name: Optional[str] = Field(None, min_length=2, max_length=150)
@@ -55,6 +57,8 @@ class DebtUpdateRequest(BaseModel):
     remaining_installments: Optional[int] = Field(None, ge=0)
     due_day: Optional[int] = Field(None, ge=1, le=31)
     start_date: Optional[date] = None
+    account_id: Optional[UUID] = None
+    sync_transactions: Optional[bool] = None
 
 class DebtPayInstallmentRequest(BaseModel):
     account_id: UUID
@@ -85,6 +89,8 @@ class DebtResponse(BaseModel):
     remaining_installments: int
     due_day: int
     start_date: Optional[date] = None
+    has_synced_transactions: bool = False
+    synced_transactions_count: int = 0
     created_at: datetime
     updated_at: datetime
 
