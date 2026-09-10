@@ -455,35 +455,6 @@ export default function TransactionsPage() {
                             <ArrowUpRight className="w-3.5 h-3.5 text-red-500 shrink-0" />
                           )}
                           <span className="font-bold text-slate-800">{tx.description}</span>
-
-                          {/* Ícone de Anotação com Tooltip ao passar o mouse */}
-                          {hasNotes && (
-                            <div className="relative group/note inline-flex items-center ml-1">
-                              <button
-                                type="button"
-                                onClick={() => handleOpenEdit(tx)}
-                                className="p-1 rounded-md bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200/80 transition-colors cursor-pointer"
-                                title="Passar o mouse para ler | Clique para editar"
-                              >
-                                <StickyNote className="w-3 h-3 text-amber-600" />
-                              </button>
-
-                              {/* Tooltip flutuante no hover */}
-                              <div className="absolute left-0 bottom-full mb-2 hidden group-hover/note:flex flex-col z-40 w-72 p-3 bg-slate-900 text-white rounded-2xl shadow-2xl border border-slate-700 pointer-events-none animate-in fade-in zoom-in-95">
-                                <div className="flex items-center gap-1.5 text-[10px] text-amber-400 font-bold mb-1 uppercase tracking-wider">
-                                  <StickyNote className="w-3 h-3 text-amber-400" />
-                                  <span>Anotação do Lançamento</span>
-                                </div>
-                                <p className="text-xs text-slate-200 font-normal whitespace-pre-wrap leading-relaxed">
-                                  {userNotes}
-                                </p>
-                                <div className="text-[9px] text-slate-400 mt-2 pt-1.5 border-t border-slate-800 flex items-center justify-between">
-                                  <span>Clique no ícone para editar</span>
-                                  <span>📝 KIVO</span>
-                                </div>
-                              </div>
-                            </div>
-                          )}
                         </div>
 
                         <div className="text-[11px] text-slate-400 pl-5 flex items-center gap-1.5 mt-0.5">
@@ -590,6 +561,37 @@ export default function TransactionsPage() {
                               <span>{isIncome ? "Receber" : "Efetivar"}</span>
                             </button>
                           )}
+
+                          {/* Botão de Anotação (ao lado do lápis de editar) */}
+                          <div className="relative group/note inline-flex items-center">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEdit(tx)}
+                              className={`p-1 rounded-md transition-colors cursor-pointer ${
+                                hasNotes
+                                  ? "bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200 shadow-2xs"
+                                  : "text-slate-300 hover:text-slate-600 hover:bg-slate-100"
+                              }`}
+                              title={hasNotes ? "Ver / Editar anotação" : "Adicionar anotação"}
+                            >
+                              <StickyNote className={`w-3.5 h-3.5 ${hasNotes ? "fill-amber-400 text-amber-700" : "text-slate-300 group-hover/note:text-slate-600"}`} />
+                            </button>
+
+                            {/* Tooltip flutuante no hover */}
+                            <div className="absolute right-0 bottom-full mb-2 hidden group-hover/note:flex flex-col z-40 w-72 p-3 bg-slate-900 text-white rounded-2xl shadow-2xl border border-slate-700 pointer-events-none animate-in fade-in zoom-in-95 text-left whitespace-normal">
+                              <div className="flex items-center gap-1.5 text-[10px] font-bold mb-1 uppercase tracking-wider text-amber-400">
+                                <StickyNote className="w-3 h-3 text-amber-400" />
+                                <span>{hasNotes ? "Anotação do Lançamento" : "Sem Anotação"}</span>
+                              </div>
+                              <p className="text-xs text-slate-200 font-normal whitespace-pre-wrap leading-relaxed">
+                                {hasNotes ? userNotes : "Nenhuma anotação vinculada. Clique para adicionar."}
+                              </p>
+                              <div className="text-[9px] text-slate-400 mt-2 pt-1.5 border-t border-slate-800 flex items-center justify-between">
+                                <span>{hasNotes ? "Clique para editar" : "Clique para adicionar"}</span>
+                                <span>📝 KIVO</span>
+                              </div>
+                            </div>
+                          </div>
 
                           <button
                             onClick={() => handleOpenEdit(tx)}
