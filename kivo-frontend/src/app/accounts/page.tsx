@@ -527,8 +527,8 @@ export default function AccountsPage() {
                       <span className="font-extrabold text-sm text-emerald-700">
                         R${" "}
                         {Math.min(
-                          parseFloat(selectedCardForPayment.credit_limit || 0),
-                          parseFloat(selectedCardForPayment.available_limit || 0) + parseFloat(paymentAmount || 0)
+                          parseFloat(selectedCardForPayment.credit_limit || "0"),
+                          parseFloat(selectedCardForPayment.available_limit || "0") + parseFloat(paymentAmount || "0")
                         ).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                       </span>
                     </div>

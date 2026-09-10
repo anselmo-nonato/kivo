@@ -1,4 +1,4 @@
-﻿from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field
 from typing import Optional, List, Dict
 from uuid import UUID
 from datetime import date, datetime
@@ -101,22 +101,40 @@ class ScenarioSimulationResponse(BaseModel):
     is_resilient: bool
     diagnosis: str
 
-# ==================== PARSER DE EXTRATO E FATURA OFX / CSV (ISSUE #16) ====================
+# ==================== PARSER DE EXTRATO E FATURA OFX / CSV / PDF (ISSUE #16) ====================
 class ImportedTransactionCandidate(BaseModel):
     external_id: Optional[str] = None
     transaction_date: date
     amount: Decimal
-    type: str # income / expense
+    type: str # income / expense / transfer
     description: str
+    notes: Optional[str] = None
+    doc_number: Optional[str] = None
     suggested_category_id: Optional[UUID] = None
     suggested_category_name: str
     suggested_essentiality: str
     confidence_score: float # 0.0 a 1.0
+    is_transfer: bool = False
+    suggested_counterparty_account_id: Optional[UUID] = None
+    suggested_counterparty_account_name: Optional[str] = None
+    transfer_direction: Optional[str] = None # "inflow" | "outflow"
+    is_future: bool = False
+    reconciliation_status: str = "new" # new, matched, future
+    is_duplicate: bool = False
+    matched_transaction_id: Optional[UUID] = None
 
 class ImportParseResponse(BaseModel):
     filename: str
-    format: str # OFX ou CSV
+    format: str # OFX, CSV ou PDF (Sicoob SISBR)
+    detected_account: Optional[str] = None
+    detected_coop: Optional[str] = None
+    period_start: Optional[date] = None
+    period_end: Optional[date] = None
+    statement_balance: Optional[Decimal] = None
+    available_balance: Optional[Decimal] = None
+    overdraft_limit: Optional[Decimal] = None
     total_found: int
     total_amount_income: Decimal
     total_amount_expense: Decimal
     candidates: List[ImportedTransactionCandidate]
+

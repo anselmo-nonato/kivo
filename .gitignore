@@ -1,4 +1,4 @@
-﻿# Ambientes virtuais e Python
+# Ambientes virtuais e Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -27,6 +27,7 @@ postgres_data/
 
 # Logs e arquivos temporários
 *.log
+*.pdf
 .DS_Store
 Thumbs.db
 scripts/__pycache__/

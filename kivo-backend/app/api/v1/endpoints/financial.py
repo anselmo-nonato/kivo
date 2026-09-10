@@ -40,6 +40,7 @@ from app.schemas.financial import (
     TagCreateRequest,
     TagResponse,
     TagReportItem,
+    TransferCreateRequest,
     TransactionCreateRequest,
     TransactionUpdateRequest,
     TransactionResponse,
@@ -66,7 +67,19 @@ async def compute_account_details(acc: Account, db: AsyncSession) -> AccountResp
         # 2. Total de pagamentos de fatura / créditos aplicados a este cartão
         stmt_inc = select(func.coalesce(func.sum(Transaction.amount), 0)).where(
             Transaction.account_id == acc.id,
-            Transaction.type.in_([TransactionType.INCOME, TransactionType.TRANSFER])
+            or_(
+                Transaction.type == TransactionType.INCOME,
+                and_(
+                    Transaction.type == TransactionType.TRANSFER,
+                    or_(
+                        Transaction.notes.ilike("%[transfer_direction:inflow]%"),
+                        Transaction.description.ilike("Transferência de %"),
+                        Transaction.description.ilike("Crédito Pagamento%"),
+                        Transaction.description.ilike("Pagamento de Fatura%"),
+                        Transaction.description.ilike("Pagamento Fatura%")
+                    )
+                )
+            )
         )
         total_exp = Decimal(str(await db.scalar(stmt_exp)))
         total_inc = Decimal(str(await db.scalar(stmt_inc)))
@@ -94,15 +107,38 @@ async def compute_account_details(acc: Account, db: AsyncSession) -> AccountResp
         )
     else:
         # Conta corrente, carteira ou investimento
+        # Entradas: receitas + transferências recebidas (inflow)
         stmt_inc = select(func.coalesce(func.sum(Transaction.amount), 0)).where(
             Transaction.account_id == acc.id,
-            Transaction.type.in_([TransactionType.INCOME, TransactionType.TRANSFER]),
-            Transaction.status == TransactionStatus.PAID
+            Transaction.status == TransactionStatus.PAID,
+            or_(
+                Transaction.type == TransactionType.INCOME,
+                and_(
+                    Transaction.type == TransactionType.TRANSFER,
+                    or_(
+                        Transaction.notes.ilike("%[transfer_direction:inflow]%"),
+                        Transaction.description.ilike("Transferência de %"),
+                        Transaction.description.ilike("Crédito %")
+                    )
+                )
+            )
         )
+        # Saídas: despesas + quitação de dívidas + transferências enviadas (outflow)
         stmt_exp = select(func.coalesce(func.sum(Transaction.amount), 0)).where(
             Transaction.account_id == acc.id,
-            Transaction.type.in_([TransactionType.EXPENSE, TransactionType.DEBT_PAYMENT]),
-            Transaction.status == TransactionStatus.PAID
+            Transaction.status == TransactionStatus.PAID,
+            or_(
+                Transaction.type.in_([TransactionType.EXPENSE, TransactionType.DEBT_PAYMENT]),
+                and_(
+                    Transaction.type == TransactionType.TRANSFER,
+                    or_(
+                        Transaction.notes.ilike("%[transfer_direction:outflow]%"),
+                        Transaction.description.ilike("Transferência para %"),
+                        Transaction.description.ilike("Pagamento Fatura%"),
+                        Transaction.description.ilike("Pagamento de Fatura%")
+                    )
+                )
+            )
         )
         total_inc = Decimal(str(await db.scalar(stmt_inc)))
         total_exp = Decimal(str(await db.scalar(stmt_exp)))
@@ -320,16 +356,17 @@ async def pay_card_invoice(
     desc = req.notes or f"Pagamento Fatura - {card.name}"
     series_id = uuid.uuid4()
 
-    # 5. Cria débito na conta bancária de saída
+    # 5. Cria débito na conta bancária de saída (Transferência / Liquidação)
     tx_debit = Transaction(
         id=uuid.uuid4(),
         workspace_id=workspace_id,
         account_id=src_acc.id,
+        destination_account_id=card.id,
         paid_by_member_id=paid_by_id,
         cost_center_id=cost_center.id,
         category_id=cat.id,
         amount=req.amount,
-        type=TransactionType.EXPENSE,
+        type=TransactionType.TRANSFER,
         essentiality=EssentialityGrade.ESSENTIAL,
         transaction_date=pay_date,
         status=TransactionStatus.PAID,
@@ -337,20 +374,21 @@ async def pay_card_invoice(
         installment_current=1,
         installment_total=1,
         description=f"Pagamento Fatura {card.name}",
-        notes=desc
+        notes=f"{desc} [transfer_direction:outflow]".strip()
     )
     db.add(tx_debit)
 
-    # 6. Cria crédito no cartão de crédito (restaura limite)
+    # 6. Cria crédito de liquidação no cartão de crédito (restaura limite de forma neutra)
     tx_credit = Transaction(
         id=uuid.uuid4(),
         workspace_id=workspace_id,
         account_id=card.id,
+        destination_account_id=src_acc.id,
         paid_by_member_id=paid_by_id,
         cost_center_id=cost_center.id,
         category_id=cat.id,
         amount=req.amount,
-        type=TransactionType.INCOME,
+        type=TransactionType.TRANSFER,
         essentiality=EssentialityGrade.ESSENTIAL,
         transaction_date=pay_date,
         status=TransactionStatus.PAID,
@@ -358,7 +396,7 @@ async def pay_card_invoice(
         installment_current=1,
         installment_total=1,
         description=f"Crédito Pagamento Fatura ({src_acc.name})",
-        notes=desc
+        notes=f"{desc} [transfer_direction:inflow]".strip()
     )
     db.add(tx_credit)
 
@@ -534,13 +572,47 @@ def build_tx_response(tx: Transaction, tags: Optional[List[Tag]] = None) -> Tran
         TagResponse(id=t.id, workspace_id=t.workspace_id, name=t.name, color=t.color, created_at=t.created_at)
         for t in actual_tags
     ]
+
+    transfer_dir = None
+    if tx.type == TransactionType.TRANSFER:
+        if tx.notes and "[transfer_direction:inflow]" in tx.notes:
+            transfer_dir = "inflow"
+        elif tx.notes and "[transfer_direction:outflow]" in tx.notes:
+            transfer_dir = "outflow"
+        elif tx.description and tx.description.lower().startswith("transferência de"):
+            transfer_dir = "inflow"
+        elif tx.description and tx.description.lower().startswith("transferência para"):
+            transfer_dir = "outflow"
+        elif tx.destination_account_id:
+            transfer_dir = "outflow"
+
+    account_name = None
+    if "account" in tx.__dict__ and tx.__dict__["account"] is not None:
+        account_name = tx.__dict__["account"].name
+
+    dest_account_name = None
+    if "destination_account" in tx.__dict__ and tx.__dict__["destination_account"] is not None:
+        dest_account_name = tx.__dict__["destination_account"].name
+
+    cat_name = None
+    cat_color = None
+    if "category" in tx.__dict__ and tx.__dict__["category"] is not None:
+        cat_name = tx.__dict__["category"].name
+        cat_color = tx.__dict__["category"].color
+
     return TransactionResponse(
         id=tx.id,
         workspace_id=tx.workspace_id,
         account_id=tx.account_id,
+        account_name=account_name,
+        destination_account_id=tx.destination_account_id,
+        destination_account_name=dest_account_name,
+        transfer_direction=transfer_dir,
         paid_by_member_id=tx.paid_by_member_id,
         cost_center_id=tx.cost_center_id,
         category_id=tx.category_id,
+        category_name=cat_name,
+        category_color=cat_color,
         amount=tx.amount,
         type=tx.type,
         essentiality=tx.essentiality,
@@ -573,7 +645,10 @@ async def list_transactions(
     await get_workspace_membership(workspace_id, current_user.id, db)
 
     stmt = select(Transaction).where(Transaction.workspace_id == workspace_id).options(
-        selectinload(Transaction.tags)
+        selectinload(Transaction.tags),
+        selectinload(Transaction.account),
+        selectinload(Transaction.destination_account),
+        selectinload(Transaction.category)
     )
 
     if start_date:
@@ -599,6 +674,129 @@ async def list_transactions(
     return [build_tx_response(tx) for tx in results]
 
 
+@router.post("/{workspace_id}/transfers", response_model=List[TransactionResponse], status_code=status.HTTP_201_CREATED, summary="Transferência entre Contas Próprias (Neutro)")
+async def create_transfer(
+    workspace_id: UUID,
+    req: TransferCreateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    member = await get_workspace_membership(workspace_id, current_user.id, db)
+
+    if req.source_account_id == req.destination_account_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A conta de origem e a conta de destino não podem ser iguais."
+        )
+
+    # 1. Carrega conta de origem
+    stmt_src = select(Account).where(
+        Account.id == req.source_account_id,
+        Account.workspace_id == workspace_id,
+        Account.is_active == True
+    )
+    src_acc = (await db.execute(stmt_src)).scalar_one_or_none()
+    if not src_acc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conta de origem não encontrada ou inativa.")
+
+    # 2. Carrega conta de destino
+    stmt_dest = select(Account).where(
+        Account.id == req.destination_account_id,
+        Account.workspace_id == workspace_id,
+        Account.is_active == True
+    )
+    dest_acc = (await db.execute(stmt_dest)).scalar_one_or_none()
+    if not dest_acc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conta de destino não encontrada ou inativa.")
+
+    # 3. Localiza ou cria categoria de Transferência
+    stmt_cat = select(Category).where(
+        Category.workspace_id == workspace_id,
+        or_(Category.name.ilike("Transferência%"), Category.name.ilike("Transferencia%"))
+    )
+    cat = (await db.execute(stmt_cat)).scalars().first()
+    if not cat:
+        stmt_any_cat = select(Category).where(Category.workspace_id == workspace_id)
+        cat = (await db.execute(stmt_any_cat)).scalars().first()
+        if not cat:
+            cat = Category(
+                id=uuid.uuid4(),
+                workspace_id=workspace_id,
+                name="Transferência entre Contas",
+                icon="arrow-left-right",
+                color="#64748B"
+            )
+            db.add(cat)
+            await db.flush()
+
+    # 4. Centro de Custo padrão
+    stmt_cc = select(CostCenter).where(CostCenter.workspace_id == workspace_id)
+    cost_center = (await db.execute(stmt_cc)).scalars().first()
+    if not cost_center:
+        cost_center = CostCenter(
+            id=uuid.uuid4(),
+            workspace_id=workspace_id,
+            name="Geral",
+            scope=CostCenterScope.FAMILY
+        )
+        db.add(cost_center)
+        await db.flush()
+
+    paid_by_id = req.paid_by_member_id or member.id
+    series_id = uuid.uuid4()
+    custom_desc = req.description.strip() if req.description and req.description.strip() else None
+
+    # 5. Transação de Saída (Origem)
+    tx_out = Transaction(
+        id=uuid.uuid4(),
+        workspace_id=workspace_id,
+        account_id=src_acc.id,
+        destination_account_id=dest_acc.id,
+        paid_by_member_id=paid_by_id,
+        cost_center_id=cost_center.id,
+        category_id=cat.id,
+        amount=req.amount,
+        type=TransactionType.TRANSFER,
+        essentiality=EssentialityGrade.ESSENTIAL,
+        transaction_date=req.transaction_date,
+        status=TransactionStatus.PAID,
+        series_id=series_id,
+        installment_current=1,
+        installment_total=1,
+        description=custom_desc or f"Transferência para {dest_acc.name}",
+        notes=f"{req.notes or ''} [transfer_direction:outflow]".strip()
+    )
+    db.add(tx_out)
+
+    # 6. Transação de Entrada Espelho (Destino)
+    tx_in = Transaction(
+        id=uuid.uuid4(),
+        workspace_id=workspace_id,
+        account_id=dest_acc.id,
+        destination_account_id=src_acc.id,
+        paid_by_member_id=paid_by_id,
+        cost_center_id=cost_center.id,
+        category_id=cat.id,
+        amount=req.amount,
+        type=TransactionType.TRANSFER,
+        essentiality=EssentialityGrade.ESSENTIAL,
+        transaction_date=req.transaction_date,
+        status=TransactionStatus.PAID,
+        series_id=series_id,
+        installment_current=1,
+        installment_total=1,
+        description=custom_desc or f"Transferência de {src_acc.name}",
+        notes=f"{req.notes or ''} [transfer_direction:inflow]".strip()
+    )
+    db.add(tx_in)
+
+    await db.commit()
+    await db.refresh(tx_out)
+    await db.refresh(tx_in)
+
+    return [build_tx_response(tx_out), build_tx_response(tx_in)]
+
+
 @router.post("/{workspace_id}/transactions", response_model=List[TransactionResponse], status_code=status.HTTP_201_CREATED, summary="Criar Lançamento (com Parcelamento)")
 async def create_transaction(
     workspace_id: UUID,
@@ -607,6 +805,69 @@ async def create_transaction(
     db: AsyncSession = Depends(get_db)
 ):
     await get_workspace_membership(workspace_id, current_user.id, db)
+
+    # Se for transferência simples com destino especificado
+    if req.type == TransactionType.TRANSFER and req.destination_account_id:
+        # Carrega conta de destino
+        stmt_dest = select(Account).where(
+            Account.id == req.destination_account_id,
+            Account.workspace_id == workspace_id,
+            Account.is_active == True
+        )
+        dest_acc = (await db.execute(stmt_dest)).scalar_one_or_none()
+        stmt_src = select(Account).where(
+            Account.id == req.account_id,
+            Account.workspace_id == workspace_id,
+            Account.is_active == True
+        )
+        src_acc = (await db.execute(stmt_src)).scalar_one_or_none()
+
+        series_id = uuid.uuid4()
+        tx_out = Transaction(
+            id=uuid.uuid4(),
+            workspace_id=workspace_id,
+            account_id=req.account_id,
+            destination_account_id=req.destination_account_id,
+            paid_by_member_id=req.paid_by_member_id,
+            cost_center_id=req.cost_center_id,
+            category_id=req.category_id,
+            amount=req.amount,
+            type=TransactionType.TRANSFER,
+            essentiality=req.essentiality,
+            transaction_date=req.transaction_date,
+            status=req.status,
+            series_id=series_id,
+            installment_current=1,
+            installment_total=1,
+            description=req.description.strip(),
+            notes=f"{req.notes or ''} [transfer_direction:outflow]".strip()
+        )
+        db.add(tx_out)
+
+        tx_in = Transaction(
+            id=uuid.uuid4(),
+            workspace_id=workspace_id,
+            account_id=req.destination_account_id,
+            destination_account_id=req.account_id,
+            paid_by_member_id=req.paid_by_member_id,
+            cost_center_id=req.cost_center_id,
+            category_id=req.category_id,
+            amount=req.amount,
+            type=TransactionType.TRANSFER,
+            essentiality=req.essentiality,
+            transaction_date=req.transaction_date,
+            status=req.status,
+            series_id=series_id,
+            installment_current=1,
+            installment_total=1,
+            description=f"Transferência de {src_acc.name if src_acc else 'outra conta'}",
+            notes=f"{req.notes or ''} [transfer_direction:inflow]".strip()
+        )
+        db.add(tx_in)
+        await db.commit()
+        await db.refresh(tx_out)
+        await db.refresh(tx_in)
+        return [build_tx_response(tx_out), build_tx_response(tx_in)]
 
     # Carrega tags
     selected_tags = []
@@ -628,6 +889,7 @@ async def create_transaction(
             id=uuid.uuid4(),
             workspace_id=workspace_id,
             account_id=req.account_id,
+            destination_account_id=req.destination_account_id,
             paid_by_member_id=req.paid_by_member_id,
             cost_center_id=req.cost_center_id,
             category_id=req.category_id,
@@ -670,6 +932,8 @@ async def update_transaction(
 
     if req.account_id is not None:
         tx.account_id = req.account_id
+    if req.destination_account_id is not None:
+        tx.destination_account_id = req.destination_account_id
     if req.paid_by_member_id is not None:
         tx.paid_by_member_id = req.paid_by_member_id
     if req.cost_center_id is not None:
@@ -718,7 +982,15 @@ async def delete_transaction(
     if not tx:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transação não encontrada.")
 
-    await db.delete(tx)
+    if tx.type == TransactionType.TRANSFER and tx.series_id:
+        stmt_paired = delete(Transaction).where(
+            Transaction.workspace_id == workspace_id,
+            Transaction.series_id == tx.series_id
+        )
+        await db.execute(stmt_paired)
+    else:
+        await db.delete(tx)
+
     await db.commit()
     return None
 

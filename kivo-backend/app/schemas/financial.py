@@ -115,9 +115,20 @@ class TagReportItem(BaseModel):
     total_income: Decimal
     transaction_count: int
 
+# ==================== TRANSFERÊNCIAS ENTRE CONTAS ====================
+class TransferCreateRequest(BaseModel):
+    source_account_id: UUID
+    destination_account_id: UUID
+    amount: Decimal = Field(..., gt=0)
+    transaction_date: date = Field(default_factory=date.today)
+    paid_by_member_id: Optional[UUID] = None
+    description: Optional[str] = None
+    notes: Optional[str] = None
+
 # ==================== TRANSAÇÕES ====================
 class TransactionCreateRequest(BaseModel):
     account_id: UUID
+    destination_account_id: Optional[UUID] = None
     paid_by_member_id: UUID
     cost_center_id: UUID
     category_id: UUID
@@ -134,6 +145,7 @@ class TransactionCreateRequest(BaseModel):
 
 class TransactionUpdateRequest(BaseModel):
     account_id: Optional[UUID] = None
+    destination_account_id: Optional[UUID] = None
     paid_by_member_id: Optional[UUID] = None
     cost_center_id: Optional[UUID] = None
     category_id: Optional[UUID] = None
@@ -151,6 +163,9 @@ class TransactionResponse(BaseModel):
     workspace_id: UUID
     account_id: UUID
     account_name: Optional[str] = None
+    destination_account_id: Optional[UUID] = None
+    destination_account_name: Optional[str] = None
+    transfer_direction: Optional[str] = None # "outflow" | "inflow"
     paid_by_member_id: UUID
     paid_by_member_name: Optional[str] = None
     cost_center_id: UUID
@@ -174,6 +189,7 @@ class TransactionResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
 
 class MonthlyFinancialSummary(BaseModel):
     month: str # YYYY-MM

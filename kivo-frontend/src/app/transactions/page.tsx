@@ -22,7 +22,8 @@ import {
   CheckCircle2,
   Clock,
   ArrowDownLeft,
-  ArrowUpRight
+  ArrowUpRight,
+  ArrowLeftRight
 } from "lucide-react";
 
 export default function TransactionsPage() {
@@ -64,6 +65,7 @@ export default function TransactionsPage() {
   const [essentiality, setEssentiality] = useState("essential");
   const [transactionDate, setTransactionDate] = useState(new Date().toISOString().slice(0, 10));
   const [accountId, setAccountId] = useState("");
+  const [destinationAccountId, setDestinationAccountId] = useState("");
   const [paidByMemberId, setPaidByMemberId] = useState("");
   const [costCenterId, setCostCenterId] = useState("");
   const [categoryId, setCategoryId] = useState("");
@@ -94,7 +96,12 @@ export default function TransactionsPage() {
       setTags(tagRes.data);
       setMembers(wsRes.data.members || []);
 
-      if (accRes.data.length > 0) setAccountId(accRes.data[0].id);
+      if (accRes.data.length > 0) {
+        setAccountId(accRes.data[0].id);
+        if (accRes.data.length > 1) {
+          setDestinationAccountId(accRes.data[1].id);
+        }
+      }
       if (wsRes.data.members?.length > 0) setPaidByMemberId(wsRes.data.members[0].id);
       if (ccRes.data.length > 0) setCostCenterId(ccRes.data[0].id);
       if (catRes.data.length > 0) setCategoryId(catRes.data[0].id);
@@ -125,7 +132,7 @@ export default function TransactionsPage() {
     }
   };
 
-  const handleOpenCreate = (initialType: "expense" | "income" = "expense") => {
+  const handleOpenCreate = (initialType: "expense" | "income" | "transfer" = "expense") => {
     setIsEditMode(false);
     setSelectedTxId(null);
     setDescription("");
@@ -134,6 +141,12 @@ export default function TransactionsPage() {
     setStatus("paid");
     setTotalInstallments("1");
     setSelectedTagIds([]);
+    if (accounts.length > 0) {
+      setAccountId(accounts[0].id);
+      if (accounts.length > 1) {
+        setDestinationAccountId(accounts[1].id);
+      }
+    }
     setIsModalOpen(true);
   };
 
@@ -147,6 +160,7 @@ export default function TransactionsPage() {
     setEssentiality(tx.essentiality);
     setTransactionDate(tx.transaction_date);
     setAccountId(tx.account_id);
+    setDestinationAccountId(tx.destination_account_id || "");
     setPaidByMemberId(tx.paid_by_member_id);
     setCostCenterId(tx.cost_center_id);
     setCategoryId(tx.category_id);
@@ -155,7 +169,7 @@ export default function TransactionsPage() {
   };
 
   const handleDeleteTransaction = async (txId: string) => {
-    if (!confirm("Tem certeza que deseja excluir esta transação?")) return;
+    if (!confirm("Tem certeza que deseja excluir esta transação? Caso seja uma transferência, o espelho vinculado também será removido.")) return;
     try {
       await api.delete(`/workspaces/${activeWorkspace?.id}/transactions/${txId}`);
       loadData();
@@ -178,7 +192,25 @@ export default function TransactionsPage() {
     setError("");
 
     try {
-      if (isEditMode && selectedTxId) {
+      if (type === "transfer") {
+        if (!accountId || !destinationAccountId) {
+          setError("Selecione a conta de origem e a conta de destino.");
+          return;
+        }
+        if (accountId === destinationAccountId) {
+          setError("A conta de origem e a conta de destino não podem ser iguais.");
+          return;
+        }
+        await api.post(`/workspaces/${activeWorkspace?.id}/transfers`, {
+          source_account_id: accountId,
+          destination_account_id: destinationAccountId,
+          amount: parseFloat(amount),
+          transaction_date: transactionDate,
+          paid_by_member_id: paidByMemberId || undefined,
+          description: description.trim() || undefined,
+          notes: description.trim() || undefined,
+        });
+      } else if (isEditMode && selectedTxId) {
         await api.put(`/workspaces/${activeWorkspace?.id}/transactions/${selectedTxId}`, {
           description: description.trim(),
           amount: parseFloat(amount),
@@ -187,6 +219,7 @@ export default function TransactionsPage() {
           essentiality,
           transaction_date: transactionDate,
           account_id: accountId,
+          destination_account_id: destinationAccountId || undefined,
           paid_by_member_id: paidByMemberId,
           cost_center_id: costCenterId,
           category_id: categoryId,
@@ -201,6 +234,7 @@ export default function TransactionsPage() {
           essentiality,
           transaction_date: transactionDate,
           account_id: accountId,
+          destination_account_id: destinationAccountId || undefined,
           paid_by_member_id: paidByMemberId,
           cost_center_id: costCenterId,
           category_id: categoryId,
@@ -236,15 +270,22 @@ export default function TransactionsPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-extrabold text-slate-900">Extrato, Recebíveis & Despesas</h1>
-            <p className="text-xs text-slate-500">Histórico de lançamentos, faturas de cartões, receitas avulsas e filtros</p>
+            <p className="text-xs text-slate-500">Histórico de lançamentos, transferências entre contas, receitas avulsas e filtros</p>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleOpenCreate("transfer")}
+              className="px-3.5 py-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <ArrowLeftRight className="w-4 h-4 text-indigo-600" />
+              <span>🔄 Transferência</span>
+            </button>
             <button
               onClick={() => handleOpenCreate("income")}
               className="px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-500/20 flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <TrendingUp className="w-4 h-4" />
-              <span>+ Receita / Recebível</span>
+              <span>+ Receita</span>
             </button>
             <button
               onClick={() => handleOpenCreate("expense")}
@@ -304,6 +345,7 @@ export default function TransactionsPage() {
             <option value="">Todos os Tipos</option>
             <option value="income">Receitas / Recebíveis</option>
             <option value="expense">Despesas</option>
+            <option value="transfer">🔄 Transferências entre Contas</option>
             <option value="debt_payment">Dívidas</option>
           </select>
 
@@ -338,9 +380,9 @@ export default function TransactionsPage() {
               <thead className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider">
                 <tr>
                   <th className="py-3.5 px-4">Data</th>
-                  <th className="py-3.5 px-4">Descrição</th>
+                  <th className="py-3.5 px-4">Descrição & Contas</th>
                   <th className="py-3.5 px-4">Tags</th>
-                  <th className="py-3.5 px-4">Status</th>
+                  <th className="py-3.5 px-4">Status / Tipo</th>
                   <th className="py-3.5 px-4">Parcela</th>
                   <th className="py-3.5 px-4 text-right">Valor</th>
                   <th className="py-3.5 px-4 text-right">Ações</th>
@@ -348,26 +390,44 @@ export default function TransactionsPage() {
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
                 {filteredTransactions.map((tx) => {
+                  const isTransfer = tx.type === "transfer";
                   const isIncome = tx.type === "income";
                   const isPending = tx.status === "pending";
+                  const isOutflowTransfer = isTransfer && tx.transfer_direction === "outflow";
+                  const isInflowTransfer = isTransfer && tx.transfer_direction === "inflow";
+
+                  const accName = tx.account_name || accounts.find((a) => a.id === tx.account_id)?.name || "Conta";
+                  const destAccName = tx.destination_account_name || accounts.find((a) => a.id === tx.destination_account_id)?.name;
+
+                  const isInvoicePayment = tx.description?.toLowerCase().includes("fatura") || tx.description?.toLowerCase().includes("crédito pagamento");
 
                   return (
-                    <tr key={tx.id} className={`hover:bg-slate-50/80 transition-colors ${isPending ? "bg-amber-50/30" : ""}`}>
+                    <tr key={tx.id} className={`hover:bg-slate-50/80 transition-colors ${isPending ? "bg-amber-50/30" : isTransfer ? "bg-slate-50/30" : ""}`}>
                       <td className="py-3 px-4 font-mono text-slate-500 whitespace-nowrap">
                         {tx.transaction_date}
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-1.5">
-                          {isIncome ? (
+                          {isInvoicePayment ? (
+                            <CreditCard className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                          ) : isTransfer ? (
+                            <ArrowLeftRight className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                          ) : isIncome ? (
                             <ArrowDownLeft className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                           ) : (
                             <ArrowUpRight className="w-3.5 h-3.5 text-red-500 shrink-0" />
                           )}
                           <span className="font-bold text-slate-800 block">{tx.description}</span>
                         </div>
-                        <span className="text-[11px] text-slate-400 pl-5">
-                          {accounts.find((a) => a.id === tx.account_id)?.name || "Conta"}
-                        </span>
+                        <div className="text-[11px] text-slate-400 pl-5 flex items-center gap-1.5 mt-0.5">
+                          {isTransfer ? (
+                            <span className="font-semibold text-slate-600">
+                              🏦 {accName} {isOutflowTransfer ? "➔ 🏦 " + (destAccName || "Destino") : "⬅ 🏦 " + (destAccName || "Origem")}
+                            </span>
+                          ) : (
+                            <span>{accName}</span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex flex-wrap gap-1">
@@ -382,7 +442,31 @@ export default function TransactionsPage() {
                         </div>
                       </td>
                       <td className="py-3 px-4 whitespace-nowrap">
-                        {isPending ? (
+                        {isTransfer ? (
+                          isInvoicePayment ? (
+                            isOutflowTransfer ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                                <CreditCard className="w-3 h-3 text-purple-500" />
+                                <span>Pagamento Fatura</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                                <CreditCard className="w-3 h-3 text-purple-500" />
+                                <span>Restauração de Limite</span>
+                              </span>
+                            )
+                          ) : isOutflowTransfer ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300">
+                              <ArrowLeftRight className="w-3 h-3 text-slate-500" />
+                              <span>Transferência Enviada</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              <ArrowLeftRight className="w-3 h-3 text-indigo-500" />
+                              <span>Transferência Recebida</span>
+                            </span>
+                          )
+                        ) : isPending ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
                             <Clock className="w-3 h-3" />
                             <span>{isIncome ? "A Receber" : "A Pagar"}</span>
@@ -395,14 +479,20 @@ export default function TransactionsPage() {
                         )}
                       </td>
                       <td className="py-3 px-4 font-mono text-slate-400 whitespace-nowrap">
-                        {tx.installment_total > 1 ? `${tx.installment_current}/${tx.installment_total}` : "À vista"}
+                        {tx.installment_total > 1 ? `${tx.installment_current}/${tx.installment_total}` : isTransfer ? "Neutro" : "À vista"}
                       </td>
                       <td
                         className={`py-3 px-4 text-right font-extrabold whitespace-nowrap font-mono ${
-                          isIncome ? "text-emerald-600 text-sm" : "text-slate-900"
+                          isInflowTransfer
+                            ? "text-indigo-600 text-sm"
+                            : isOutflowTransfer
+                            ? "text-slate-700"
+                            : isIncome
+                            ? "text-emerald-600 text-sm"
+                            : "text-slate-900"
                         }`}
                       >
-                        {isIncome ? "+" : "-"} R${" "}
+                        {isIncome || isInflowTransfer ? "+" : "-"} R${" "}
                         {parseFloat(tx.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                       </td>
                       <td className="py-3 px-4 text-right whitespace-nowrap">
@@ -456,8 +546,54 @@ export default function TransactionsPage() {
                 <X className="w-5 h-5" />
               </button>
 
+              {/* Seletor de Tipo no Topo do Modal (Modo Criação) */}
+              {!isEditMode && (
+                <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 rounded-2xl">
+                  <button
+                    type="button"
+                    onClick={() => setType("expense")}
+                    className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      type === "expense"
+                        ? "bg-white text-slate-900 shadow-xs"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    <TrendingDown className="w-3.5 h-3.5 text-red-500" />
+                    <span>Despesa</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setType("income")}
+                    className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      type === "income"
+                        ? "bg-white text-emerald-700 shadow-xs"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Receita</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setType("transfer")}
+                    className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      type === "transfer"
+                        ? "bg-white text-indigo-700 shadow-xs"
+                        : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    <ArrowLeftRight className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Transferência</span>
+                  </button>
+                </div>
+              )}
+
               <div className="flex items-center gap-2">
-                {type === "income" ? (
+                {type === "transfer" ? (
+                  <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center">
+                    <ArrowLeftRight className="w-5 h-5" />
+                  </div>
+                ) : type === "income" ? (
                   <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
                     <TrendingUp className="w-5 h-5" />
                   </div>
@@ -470,15 +606,27 @@ export default function TransactionsPage() {
                   <h2 className="text-lg font-bold text-slate-900">
                     {isEditMode
                       ? "Editar Lançamento"
-                      : type === "income" ? "Nova Receita / Recebível Avulso" : "Nova Despesa"}
+                      : type === "transfer"
+                      ? "Transferência entre Contas Próprias"
+                      : type === "income"
+                      ? "Nova Receita / Recebível Avulso"
+                      : "Nova Despesa"}
                   </h2>
                   <p className="text-xs text-slate-500">
-                    {type === "income"
+                    {type === "transfer"
+                      ? "Movimentação neutra de recursos entre bancos ou carteiras (Ativo ➔ Ativo)"
+                      : type === "income"
                       ? "Freelances, consultorias, reembolsos, bônus e recebíveis futuros"
-                      : "Gastos, compras à vista ou parceladas"}
+                      : "Gastos, contas a pagar, compras à vista ou parceladas"}
                   </p>
                 </div>
               </div>
+
+              {type === "transfer" && (
+                <div className="p-3 bg-indigo-50/70 border border-indigo-200 rounded-2xl text-[11px] text-indigo-900 leading-relaxed">
+                  💡 <b>Neutro Financeiramente:</b> O valor transferido reduzirá o saldo da conta de origem e aumentará a conta de destino, sem inflacionar artificialmente suas receitas ou despesas nos relatórios e DRE.
+                </div>
+              )}
 
               {error && (
                 <div className="p-3 rounded-xl bg-red-50 text-red-700 text-xs font-semibold flex items-center gap-2">
@@ -489,13 +637,21 @@ export default function TransactionsPage() {
 
               <form onSubmit={handleSaveTransaction} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Descrição</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    {type === "transfer" ? "Descrição / Finalidade da Transferência" : "Descrição"}
+                  </label>
                   <input
                     type="text"
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    placeholder={type === "income" ? "Ex: Consultoria Cliente X, Freelance Design, Restituição IR..." : "Ex: Supermercado, Farmácia, Restaurante..."}
-                    required
+                    placeholder={
+                      type === "transfer"
+                        ? "Ex: Transferência Pró-labore para Sicoob, Aporte em Investimento..."
+                        : type === "income"
+                        ? "Ex: Consultoria Cliente X, Freelance Design, Restituição IR..."
+                        : "Ex: Supermercado, Farmácia, Restaurante..."
+                    }
+                    required={type !== "transfer"}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-emerald-500 font-medium"
                   />
                 </div>
@@ -514,7 +670,9 @@ export default function TransactionsPage() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Data (Início / 1ª Parcela)</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      {type === "transfer" ? "Data da Transferência" : "Data (Início / 1ª Parcela)"}
+                    </label>
                     <input
                       type="date"
                       value={transactionDate}
@@ -525,67 +683,108 @@ export default function TransactionsPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Tipo</label>
-                    <select
-                      value={type}
-                      onChange={(e) => setType(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-semibold"
-                    >
-                      <option value="income">Receita / Recebível</option>
-                      <option value="expense">Despesa</option>
-                      <option value="debt_payment">Pagamento de Dívida</option>
-                    </select>
+                {type === "transfer" ? (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Conta de Origem (Saída):
+                      </label>
+                      <select
+                        value={accountId}
+                        onChange={(e) => setAccountId(e.target.value)}
+                        className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-semibold"
+                        required
+                      >
+                        {accounts.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.type === "credit_card" ? "💳 " : "🏦 "} {a.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Conta de Destino (Entrada):
+                      </label>
+                      <select
+                        value={destinationAccountId}
+                        onChange={(e) => setDestinationAccountId(e.target.value)}
+                        className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs font-semibold"
+                        required
+                      >
+                        {accounts.map((a) => (
+                          <option key={a.id} value={a.id} disabled={a.id === accountId}>
+                            {a.type === "credit_card" ? "💳 " : "🏦 "} {a.name} {a.id === accountId ? "(Origem)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Status da Entrada / Saída</label>
-                    <select
-                      value={status}
-                      onChange={(e) => setStatus(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-bold text-emerald-700"
-                    >
-                      <option value="paid">{type === "income" ? "Já Recebido (Na Conta)" : "Já Pago"}</option>
-                      <option value="pending">{type === "income" ? "A Receber (Previsão Futura)" : "A Pagar (Pendente)"}</option>
-                    </select>
-                  </div>
-                </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">Tipo</label>
+                        <select
+                          value={type}
+                          onChange={(e) => setType(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-semibold"
+                        >
+                          <option value="income">Receita / Recebível</option>
+                          <option value="expense">Despesa</option>
+                          <option value="debt_payment">Pagamento de Dívida</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">Status da Entrada / Saída</label>
+                        <select
+                          value={status}
+                          onChange={(e) => setStatus(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm font-bold text-emerald-700"
+                        >
+                          <option value="paid">{type === "income" ? "Já Recebido (Na Conta)" : "Já Pago"}</option>
+                          <option value="pending">{type === "income" ? "A Receber (Previsão Futura)" : "A Pagar (Pendente)"}</option>
+                        </select>
+                      </div>
+                    </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      {type === "income" ? "Conta de Depósito" : "Conta / Cartão"}
-                    </label>
-                    <select
-                      value={accountId}
-                      onChange={(e) => setAccountId(e.target.value)}
-                      className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs"
-                    >
-                      {accounts.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.type === "credit_card" ? "💳 Cartão: " : "🏦 Conta: "}
-                          {a.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      {type === "income" ? "Quem Recebeu" : "Quem Pagou"}
-                    </label>
-                    <select
-                      value={paidByMemberId}
-                      onChange={(e) => setPaidByMemberId(e.target.value)}
-                      className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs"
-                    >
-                      {members.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.display_name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">
+                          {type === "income" ? "Conta de Depósito" : "Conta / Cartão"}
+                        </label>
+                        <select
+                          value={accountId}
+                          onChange={(e) => setAccountId(e.target.value)}
+                          className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs"
+                        >
+                          {accounts.map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {a.type === "credit_card" ? "💳 Cartão: " : "🏦 Conta: "}
+                              {a.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">
+                          {type === "income" ? "Quem Recebeu" : "Quem Pagou"}
+                        </label>
+                        <select
+                          value={paidByMemberId}
+                          onChange={(e) => setPaidByMemberId(e.target.value)}
+                          className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs"
+                        >
+                          {members.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.display_name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </>
+                )}
 
                 {/* Calculadora Opcional de Taxa do Cartão para Boletos/Despesas */}
                 {type === "expense" && accounts.find((a) => a.id === accountId)?.type === "credit_card" && (
@@ -642,65 +841,67 @@ export default function TransactionsPage() {
                   </div>
                 )}
 
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Categoria</label>
-                    <select
-                      value={categoryId}
-                      onChange={(e) => setCategoryId(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs"
-                    >
-                      {categories.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
+                {type !== "transfer" && (
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Categoria</label>
+                      <select
+                        value={categoryId}
+                        onChange={(e) => setCategoryId(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs"
+                      >
+                        {categories.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Centro de Custo</label>
+                      <select
+                        value={costCenterId}
+                        onChange={(e) => setCostCenterId(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs"
+                      >
+                        {costCenters.map((cc) => (
+                          <option key={cc.id} value={cc.id}>
+                            {cc.name} ({cc.scope})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        {type === "income" ? "Natureza da Renda" : "Classificação (50-30-20)"}
+                      </label>
+                      <select
+                        value={essentiality}
+                        onChange={(e) => setEssentiality(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-semibold"
+                      >
+                        {type === "income" ? (
+                          <>
+                            <option value="essential">💼 Renda Principal (Salário/Pró-labore)</option>
+                            <option value="lifestyle">🤝 Renda Extra / Freelance</option>
+                            <option value="debt">🎁 Bônus / PLR / 13º</option>
+                            <option value="waste">🏠 Aluguel / Investimentos / Reembolso</option>
+                          </>
+                        ) : (
+                          <>
+                            <option value="essential">🏠 Essencial (50%)</option>
+                            <option value="lifestyle">🍿 Estilo de Vida (30%)</option>
+                            <option value="debt">💳 Dívida / Encargos (20%)</option>
+                            <option value="waste">⚠️ Ralo / Desperdício</option>
+                          </>
+                        )}
+                      </select>
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Centro de Custo</label>
-                    <select
-                      value={costCenterId}
-                      onChange={(e) => setCostCenterId(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs"
-                    >
-                      {costCenters.map((cc) => (
-                        <option key={cc.id} value={cc.id}>
-                          {cc.name} ({cc.scope})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      {type === "income" ? "Natureza da Renda" : "Classificação (50-30-20)"}
-                    </label>
-                    <select
-                      value={essentiality}
-                      onChange={(e) => setEssentiality(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-semibold"
-                    >
-                      {type === "income" ? (
-                        <>
-                          <option value="essential">💼 Renda Principal (Salário/Pró-labore)</option>
-                          <option value="lifestyle">🤝 Renda Extra / Freelance</option>
-                          <option value="debt">🎁 Bônus / PLR / 13º</option>
-                          <option value="waste">🏠 Aluguel / Investimentos / Reembolso</option>
-                        </>
-                      ) : (
-                        <>
-                          <option value="essential">🏠 Essencial (50%)</option>
-                          <option value="lifestyle">🍿 Estilo de Vida (30%)</option>
-                          <option value="debt">💳 Dívida / Encargos (20%)</option>
-                          <option value="waste">⚠️ Ralo / Desperdício</option>
-                        </>
-                      )}
-                    </select>
-                  </div>
-                </div>
+                )}
 
-                {/* Parcelamento (apenas no modo criação) */}
-                {!isEditMode && (
+                {/* Parcelamento (apenas no modo criação e não-transferência) */}
+                {!isEditMode && type !== "transfer" && (
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">
                       {type === "income" ? "Parcelamento do Recebível (1x a 120x)" : "Parcelamento da Compra (1x a 120x)"}
@@ -719,58 +920,70 @@ export default function TransactionsPage() {
                   </div>
                 )}
 
-                {/* Campo Dedicado de Tags */}
-                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-                  <label className="block text-xs font-bold text-slate-700">Tags do Projeto / Cliente / Evento</label>
-                  <div className="flex flex-wrap gap-1.5 mb-2">
-                    {tags.map((t) => {
-                      const isSelected = selectedTagIds.includes(t.id);
-                      return (
-                        <button
-                          key={t.id}
-                          type="button"
-                          onClick={() => {
-                            if (isSelected) {
-                              setSelectedTagIds(selectedTagIds.filter((id) => id !== t.id));
-                            } else {
-                              setSelectedTagIds([...selectedTagIds, t.id]);
-                            }
-                          }}
-                          className={`px-2.5 py-1 rounded-full text-xs font-bold border transition-colors cursor-pointer ${
-                            isSelected
-                              ? "bg-blue-600 text-white border-blue-600"
-                              : "bg-white text-slate-600 border-slate-300 hover:bg-slate-100"
-                          }`}
-                        >
-                          #{t.name}
-                        </button>
-                      );
-                    })}
-                  </div>
+                {/* Campo Dedicado de Tags (não-transferência) */}
+                {type !== "transfer" && (
+                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                    <label className="block text-xs font-bold text-slate-700">Tags do Projeto / Cliente / Evento</label>
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {tags.map((t) => {
+                        const isSelected = selectedTagIds.includes(t.id);
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => {
+                              if (isSelected) {
+                                setSelectedTagIds(selectedTagIds.filter((id) => id !== t.id));
+                              } else {
+                                setSelectedTagIds([...selectedTagIds, t.id]);
+                              }
+                            }}
+                            className={`px-2.5 py-1 rounded-full text-xs font-bold border transition-colors cursor-pointer ${
+                              isSelected
+                                ? "bg-blue-600 text-white border-blue-600"
+                                : "bg-white text-slate-600 border-slate-300 hover:bg-slate-100"
+                            }`}
+                          >
+                            #{t.name}
+                          </button>
+                        );
+                      })}
+                    </div>
 
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={newTagName}
-                      onChange={(e) => setNewTagName(e.target.value)}
-                      placeholder="Criar nova tag (ex: #ProjetoFreelance)..."
-                      className="flex-1 px-3 py-1.5 rounded-xl border border-slate-300 text-xs bg-white"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleCreateTag}
-                      className="px-3 py-1.5 rounded-xl bg-slate-800 text-white font-bold text-xs hover:bg-slate-900"
-                    >
-                      + Criar Tag
-                    </button>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newTagName}
+                        onChange={(e) => setNewTagName(e.target.value)}
+                        placeholder="Criar nova tag (ex: #ProjetoFreelance)..."
+                        className="flex-1 px-3 py-1.5 rounded-xl border border-slate-300 text-xs bg-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleCreateTag}
+                        className="px-3 py-1.5 rounded-xl bg-slate-800 text-white font-bold text-xs hover:bg-slate-900"
+                      >
+                        + Criar Tag
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <button
                   type="submit"
-                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md shadow-emerald-500/20 transition-colors cursor-pointer"
+                  className={`w-full py-3 rounded-xl text-white font-bold text-sm shadow-md transition-colors cursor-pointer ${
+                    type === "transfer"
+                      ? "bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/20"
+                      : "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20"
+                  }`}
                 >
-                  {isEditMode ? "Salvar Alterações" : type === "income" ? "Salvar Receita" : "Salvar Despesa"}
+                  {isEditMode
+                    ? "Salvar Alterações"
+                    : type === "transfer"
+                    ? "Confirmar Transferência entre Contas"
+                    : type === "income"
+                    ? "Salvar Receita"
+                    : "Salvar Despesa"}
                 </button>
               </form>
             </div>

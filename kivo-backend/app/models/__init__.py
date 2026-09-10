@@ -208,6 +208,7 @@ class Transaction(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     workspace_id = Column(UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True)
     account_id = Column(UUID(as_uuid=True), ForeignKey("accounts.id"), nullable=False)
+    destination_account_id = Column(UUID(as_uuid=True), ForeignKey("accounts.id"), nullable=True)
     paid_by_member_id = Column(UUID(as_uuid=True), ForeignKey("workspace_members.id"), nullable=False, index=True)
     cost_center_id = Column(UUID(as_uuid=True), ForeignKey("cost_centers.id"), nullable=False, index=True)
     category_id = Column(UUID(as_uuid=True), ForeignKey("categories.id"), nullable=False, index=True)
@@ -225,8 +226,11 @@ class Transaction(Base):
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     workspace = relationship("Workspace", back_populates="transactions")
+    account = relationship("Account", foreign_keys=[account_id])
+    destination_account = relationship("Account", foreign_keys=[destination_account_id])
     category = relationship("Category")
     tags = relationship("Tag", secondary=transaction_tags, back_populates="transactions")
+
 
 
 class Debt(Base):

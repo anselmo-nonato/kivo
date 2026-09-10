@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
@@ -12,6 +12,9 @@ import uuid
 import re
 import csv
 import io
+import hashlib
+
+from app.services.pdf_parser import parse_pdf_statement, parse_sicoob_pdf, parse_caixa_pdf
 
 from app.core.database import get_db
 from app.models import (
@@ -460,10 +463,11 @@ CATEGORY_RULES = [
     (r"(?i)(salario|pro-labore|pix recebido|ted recebida|dividendos|rendimento)", "Receitas", "essential"),
 ]
 
-@router.post("/{workspace_id}/import/parse", response_model=ImportParseResponse, summary="Parser de Extratos OFX e CSV com Sugestão")
+@router.post("/{workspace_id}/import/parse", response_model=ImportParseResponse, summary="Parser de Extratos OFX, CSV e PDF com Sugestão e Conciliação")
 async def parse_import_file(
     workspace_id: UUID,
     file: UploadFile = File(...),
+    account_id: Optional[UUID] = Form(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -480,10 +484,33 @@ async def parse_import_file(
     candidates: List[ImportedTransactionCandidate] = []
     total_inc = Decimal("0.00")
     total_exp = Decimal("0.00")
+    format_name = ext.upper()
+    detected_account = None
+    detected_coop = None
+    period_start = None
+    period_end = None
+    statement_balance = None
+    available_balance = None
+    overdraft_limit = None
 
-    if ext == "ofx":
+    if ext == "pdf":
+        pdf_res = parse_pdf_statement(content, workspace_cats, filename=filename)
+        format_name = pdf_res["format"]
+        detected_account = pdf_res["detected_account"]
+        detected_coop = pdf_res["detected_coop"]
+        period_start = pdf_res["period_start"]
+        period_end = pdf_res["period_end"]
+        statement_balance = pdf_res["statement_balance"]
+        available_balance = pdf_res["available_balance"]
+        overdraft_limit = pdf_res["overdraft_limit"]
+        total_inc = pdf_res["total_amount_income"]
+        total_exp = pdf_res["total_amount_expense"]
+
+        for cand in pdf_res["candidates"]:
+            candidates.append(ImportedTransactionCandidate(**cand))
+
+    elif ext == "ofx":
         text = content.decode("utf-8", errors="ignore")
-        # Extrai blocos <STMTTRN>
         trn_blocks = re.findall(r"<STMTTRN>([\s\S]*?)</STMTTRN>", text)
         for block in trn_blocks:
             trntype = re.search(r"<TRNTYPE>(.*)", block)
@@ -539,9 +566,7 @@ async def parse_import_file(
         reader = csv.reader(io.StringIO(text), delimiter="," if "," in text else ";")
         for row in reader:
             if len(row) >= 3 and any(char.isdigit() for char in row[0]):
-                # Assume: Data, Descrição, Valor
                 try:
-                    # Tenta formatar data YYYY-MM-DD ou DD/MM/YYYY
                     raw_dt = row[0].strip()
                     if "/" in raw_dt:
                         d, m, y = map(int, raw_dt.split("/"))
@@ -589,11 +614,90 @@ async def parse_import_file(
                 except Exception:
                     continue
 
+    # 4. ENRIQUECIMENTO INTELIGENTE & AUTO-DETECÇÃO DE TRANSFERÊNCIAS ENTRE CONTAS
+    stmt_accs = select(Account).where(Account.workspace_id == workspace_id, Account.is_active == True)
+    workspace_accs = (await db.execute(stmt_accs)).scalars().all()
+    other_accounts = [a for a in workspace_accs if a.id != account_id]
+    default_other_acc = other_accounts[0] if other_accounts else None
+
+    stmt_members = select(WorkspaceMember).where(WorkspaceMember.workspace_id == workspace_id)
+    workspace_members = (await db.execute(stmt_members)).scalars().all()
+    member_names = [m.display_name.lower().strip() for m in workspace_members if m.display_name]
+
+    for c in candidates:
+        full_info = f"{c.description} {c.notes or ''}".lower()
+        # Detecta se a movimentação é Pix/TED entre contas próprias do titular ou membros
+        is_own_transfer = (
+            any(name in full_info for name in member_names if len(name) > 3) or
+            any(term in full_info for term in ["mesma titularidade", "entre contas", "transf.mesma", "pix rec.outra if", "rec.outra if", "ted mesma", "transf entre"])
+        )
+        if is_own_transfer:
+            c.is_transfer = True
+            c.type = "transfer"
+            c.transfer_direction = "inflow" if ("rec" in full_info or "recebimento" in full_info or c.type == "income") else "outflow"
+            c.suggested_category_name = "Transferência entre Contas"
+            if default_other_acc:
+                c.suggested_counterparty_account_id = default_other_acc.id
+                c.suggested_counterparty_account_name = default_other_acc.name
+
+    # 5. PRE-MATCHING INTELIGENTE CONTRA O BANCO DE DADOS (PREVENÇÃO DE DUPLICIDADE)
+    if account_id and candidates:
+        min_date = min(c.transaction_date for c in candidates)
+        max_date = max(c.transaction_date for c in candidates)
+
+        stmt_existing = select(Transaction).where(
+            Transaction.workspace_id == workspace_id,
+            Transaction.account_id == account_id,
+            Transaction.transaction_date >= min_date,
+            Transaction.transaction_date <= max_date
+        )
+        existing_txs = (await db.execute(stmt_existing)).scalars().all()
+
+        # Cria índice de transações existentes: (data, valor, tipo) -> Transaction
+        matched_pool: dict = {}
+        for tx in existing_txs:
+            tx_type_str = tx.type.value if hasattr(tx.type, "value") else str(tx.type)
+            key = (tx.transaction_date, tx.amount, tx_type_str)
+            if key not in matched_pool:
+                matched_pool[key] = []
+            matched_pool[key].append(tx)
+
+        for c in candidates:
+            # Tenta match exato por tipo
+            k = (c.transaction_date, c.amount, c.type)
+            # Tenta match alternativo para transferências (ex: se no banco está como transfer e no extrato como income/expense ou vice-versa)
+            k_alt_transfer = (c.transaction_date, c.amount, "transfer")
+            k_alt_income = (c.transaction_date, c.amount, "income")
+            k_alt_expense = (c.transaction_date, c.amount, "expense")
+
+            matched_tx = None
+            if k in matched_pool and len(matched_pool[k]) > 0:
+                matched_tx = matched_pool[k].pop(0)
+            elif k_alt_transfer in matched_pool and len(matched_pool[k_alt_transfer]) > 0:
+                matched_tx = matched_pool[k_alt_transfer].pop(0)
+            elif c.is_transfer and k_alt_income in matched_pool and len(matched_pool[k_alt_income]) > 0:
+                matched_tx = matched_pool[k_alt_income].pop(0)
+            elif c.is_transfer and k_alt_expense in matched_pool and len(matched_pool[k_alt_expense]) > 0:
+                matched_tx = matched_pool[k_alt_expense].pop(0)
+
+            if matched_tx:
+                c.is_duplicate = True
+                c.reconciliation_status = "matched"
+                c.matched_transaction_id = matched_tx.id
+
     return ImportParseResponse(
         filename=filename,
-        format=ext.upper(),
+        format=format_name,
+        detected_account=detected_account,
+        detected_coop=detected_coop,
+        period_start=period_start,
+        period_end=period_end,
+        statement_balance=statement_balance,
+        available_balance=available_balance,
+        overdraft_limit=overdraft_limit,
         total_found=len(candidates),
         total_amount_income=total_inc,
         total_amount_expense=total_exp,
         candidates=candidates
     )
+
