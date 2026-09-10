@@ -17,13 +17,15 @@ import {
   ShieldCheck,
   CreditCard,
   PieChart as PieIcon,
-  Sparkles
+  Sparkles,
+  Calendar
 } from "lucide-react";
 
 export default function DashboardPage() {
   const { activeWorkspace } = useAuth();
   const [summary, setSummary] = useState<any>(null);
   const [accounts, setAccounts] = useState<any[]>([]);
+  const [cardsSummary, setCardsSummary] = useState<any>(null);
   const [dti, setDti] = useState<any>(null);
   const [radar, setRadar] = useState<any>(null);
   const [waste, setWaste] = useState<any>(null);
@@ -35,12 +37,13 @@ export default function DashboardPage() {
     if (!activeWorkspace) return;
     setLoading(true);
     try {
-      const [sumRes, accRes, dtiRes, radarRes, wasteRes] = await Promise.allSettled([
+      const [sumRes, accRes, dtiRes, radarRes, wasteRes, cardsSumRes] = await Promise.allSettled([
         api.get(`/workspaces/${activeWorkspace.id}/summary?month=${currentMonth}`),
         api.get(`/workspaces/${activeWorkspace.id}/accounts`),
         api.get(`/workspaces/${activeWorkspace.id}/debts/dti`),
         api.get(`/workspaces/${activeWorkspace.id}/radar?month=${currentMonth}`),
         api.get(`/workspaces/${activeWorkspace.id}/waste?month=${currentMonth}`),
+        api.get(`/workspaces/${activeWorkspace.id}/cards/summary`),
       ]);
 
       if (sumRes.status === "fulfilled") setSummary(sumRes.value.data);
@@ -48,6 +51,7 @@ export default function DashboardPage() {
       if (dtiRes.status === "fulfilled") setDti(dtiRes.value.data);
       if (radarRes.status === "fulfilled") setRadar(radarRes.value.data);
       if (wasteRes.status === "fulfilled") setWaste(wasteRes.value.data);
+      if (cardsSumRes.status === "fulfilled") setCardsSummary(cardsSumRes.value.data);
     } catch (err) {
       console.error("Erro ao carregar dados do dashboard:", err);
     } finally {
@@ -270,6 +274,103 @@ export default function DashboardPage() {
             </Link>
           </div>
         </div>
+
+        {/* SEÇÃO CONSOLIDADA DE CARTÕES & PREVISIBILIDADE */}
+        {cardsSummary && cardsSummary.cards_count > 0 && (
+          <div className="p-6 rounded-3xl bg-white border border-purple-100 shadow-xs space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center">
+                  <CreditCard className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-slate-900 text-base">Consolidado de Cartões & Previsibilidade</h3>
+                  <p className="text-xs text-slate-500">Resumo macro de limites e projeção das faturas dos próximos meses</p>
+                </div>
+              </div>
+              <Link
+                href="/accounts"
+                className="text-xs font-bold text-purple-600 hover:text-purple-700 flex items-center gap-1 self-start sm:self-auto"
+              >
+                <span>Ver Todos os Cartões</span>
+                <ArrowUpRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+
+            {/* 3 Métricas Rápidas */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-0.5">
+                <span className="text-[10px] uppercase font-bold text-slate-400">Limite Total Consolidado</span>
+                <div className="text-xl font-extrabold text-slate-900">
+                  R$ {parseFloat(cardsSummary.total_credit_limit || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                </div>
+                <span className="text-[10px] text-slate-400">{cardsSummary.cards_count} cartões ativos</span>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-100/80 space-y-0.5">
+                <span className="text-[10px] uppercase font-bold text-emerald-700">Limite Disponível Livre</span>
+                <div className="text-xl font-extrabold text-emerald-700">
+                  R$ {parseFloat(cardsSummary.total_available_limit || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                </div>
+                <span className="text-[10px] text-emerald-600">Disponível em todos os cartões</span>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-purple-50/60 border border-purple-100/80 space-y-0.5">
+                <span className="text-[10px] uppercase font-bold text-purple-700">Faturas Atuais / Limite Usado</span>
+                <div className="text-xl font-extrabold text-purple-700">
+                  R$ {parseFloat(cardsSummary.total_used_limit || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                </div>
+                <span className="text-[10px] text-purple-600">{cardsSummary.usage_percentage}% de comprometimento</span>
+              </div>
+            </div>
+
+            {/* Previsibilidade das Faturas Futuras */}
+            {cardsSummary.monthly_forecast?.length > 0 && (
+              <div className="space-y-2 pt-2">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-600">
+                  <div className="flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-purple-600" />
+                    <span>Previsão de Faturas por Mês</span>
+                  </div>
+                  <span className="text-[11px] font-normal text-slate-400">Parcelamentos e compras programadas</span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                  {cardsSummary.monthly_forecast.map((fc: any, idx: number) => {
+                    const isCurrent = idx === 0;
+                    const amt = parseFloat(fc.total_amount || 0);
+
+                    return (
+                      <div
+                        key={fc.month}
+                        className={`p-3 rounded-xl border transition-all ${
+                          isCurrent
+                            ? "bg-purple-50/80 border-purple-200"
+                            : "bg-slate-50/80 border-slate-100 hover:border-slate-200"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between text-xs font-bold mb-1">
+                          <span className={isCurrent ? "text-purple-900" : "text-slate-600"}>{fc.month_name}</span>
+                          {isCurrent && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-purple-600 text-white">
+                              Atual
+                            </span>
+                          )}
+                        </div>
+                        <div className={`text-sm font-extrabold ${amt > 0 ? "text-slate-900" : "text-slate-400"}`}>
+                          R$ {amt.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        </div>
+                        <div className="text-[10px] text-slate-400 mt-0.5">
+                          {fc.transaction_count} {fc.transaction_count === 1 ? "compra" : "compras"}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Linha 3: Contas Bancárias Cadastradas */}
         <div className="space-y-4">

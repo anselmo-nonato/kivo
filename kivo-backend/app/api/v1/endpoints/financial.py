@@ -3,9 +3,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy import func, and_, or_, delete, case
-from typing import Optional, List
+from typing import Optional, List, Dict
 from uuid import UUID
 from datetime import date, datetime, timezone
+import calendar
 from dateutil.relativedelta import relativedelta
 from decimal import Decimal
 import uuid
@@ -48,7 +49,10 @@ from app.schemas.financial import (
     RecurringBillCreateRequest,
     RecurringBillUpdateRequest,
     RecurringBillResponse,
-    RecurringSummaryResponse
+    RecurringSummaryResponse,
+    CardsExecutiveSummaryResponse,
+    CardMonthlyForecast,
+    CardDetailForecast
 )
 from app.api.deps import get_current_user
 from app.api.v1.endpoints.workspaces import get_workspace_membership
@@ -177,6 +181,110 @@ async def list_accounts(
     accounts = (await db.execute(stmt)).scalars().all()
     
     return [await compute_account_details(acc, db) for acc in accounts]
+
+
+@router.get("/{workspace_id}/cards/summary", response_model=CardsExecutiveSummaryResponse, summary="Resumo Executivo Consolidado de Cartões de Crédito & Previsibilidade de Faturas")
+async def get_cards_executive_summary(
+    workspace_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    await get_workspace_membership(workspace_id, current_user.id, db)
+
+    # 1. Carrega todos os cartões de crédito ativos do workspace
+    stmt = select(Account).where(
+        Account.workspace_id == workspace_id,
+        Account.type == AccountType.CREDIT_CARD,
+        Account.is_active == True
+    )
+    card_accounts = (await db.execute(stmt)).scalars().all()
+
+    if not card_accounts:
+        return CardsExecutiveSummaryResponse(
+            total_credit_limit=Decimal("0.00"),
+            total_used_limit=Decimal("0.00"),
+            total_available_limit=Decimal("0.00"),
+            usage_percentage=0.0,
+            cards_count=0,
+            current_month_invoice_total=Decimal("0.00"),
+            monthly_forecast=[]
+        )
+
+    # Computa detalhes de cada cartão
+    card_details = [await compute_account_details(c, db) for c in card_accounts]
+
+    total_credit_limit = sum((c.credit_limit or Decimal("0.00")) for c in card_details)
+    total_used_limit = sum((c.used_limit or Decimal("0.00")) for c in card_details)
+    total_available_limit = sum((c.available_limit or Decimal("0.00")) for c in card_details)
+    usage_pct = float(round((total_used_limit / total_credit_limit * 100), 1)) if total_credit_limit > 0 else 0.0
+
+    card_ids = [c.id for c in card_accounts]
+    card_name_map = {c.id: c.name for c in card_accounts}
+
+    # 2. Gera previsão para os próximos 6 meses (Mês Atual + 5 meses seguintes)
+    MONTH_NAMES = ["", "Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+    today = date.today()
+    current_month_str = today.strftime("%Y-%m")
+    
+    forecast_list: List[CardMonthlyForecast] = []
+    current_month_invoice_total = Decimal("0.00")
+
+    for m_offset in range(6):
+        target_date = today + relativedelta(months=m_offset)
+        m_str = target_date.strftime("%Y-%m")
+        m_name = f"{MONTH_NAMES[target_date.month]}/{str(target_date.year)[2:]}"
+        
+        start_of_month = date(target_date.year, target_date.month, 1)
+        end_of_month = date(target_date.year, target_date.month, calendar.monthrange(target_date.year, target_date.month)[1])
+
+        stmt_txs = select(Transaction).where(
+            Transaction.workspace_id == workspace_id,
+            Transaction.account_id.in_(card_ids),
+            Transaction.type.in_([TransactionType.EXPENSE, TransactionType.DEBT_PAYMENT]),
+            Transaction.transaction_date >= start_of_month,
+            Transaction.transaction_date <= end_of_month
+        )
+        txs = (await db.execute(stmt_txs)).scalars().all()
+
+        month_total = Decimal("0.00")
+        card_totals: Dict[UUID, Decimal] = {cid: Decimal("0.00") for cid in card_ids}
+
+        for tx in txs:
+            month_total += tx.amount
+            if tx.account_id in card_totals:
+                card_totals[tx.account_id] += tx.amount
+
+        by_card_list = [
+            CardDetailForecast(
+                card_id=cid,
+                card_name=card_name_map.get(cid, "Cartão"),
+                amount=amt
+            )
+            for cid, amt in card_totals.items() if amt > 0
+        ]
+
+        if m_str == current_month_str:
+            current_month_invoice_total = month_total
+
+        forecast_list.append(
+            CardMonthlyForecast(
+                month=m_str,
+                month_name=m_name,
+                total_amount=month_total,
+                transaction_count=len(txs),
+                by_card=by_card_list
+            )
+        )
+
+    return CardsExecutiveSummaryResponse(
+        total_credit_limit=total_credit_limit,
+        total_used_limit=total_used_limit,
+        total_available_limit=total_available_limit,
+        usage_percentage=usage_pct,
+        cards_count=len(card_accounts),
+        current_month_invoice_total=current_month_invoice_total,
+        monthly_forecast=forecast_list
+    )
 
 
 @router.post("/{workspace_id}/accounts", response_model=AccountResponse, status_code=status.HTTP_201_CREATED, summary="Criar Conta / Cartão")

@@ -263,3 +263,26 @@ class RecurringSummaryResponse(BaseModel):
     total_active_bills: int
     bills: List[RecurringBillResponse]
 
+# ==================== RESUMO CONSOLIDADO DE CARTÕES ====================
+class CardDetailForecast(BaseModel):
+    card_id: UUID
+    card_name: str
+    amount: Decimal
+
+class CardMonthlyForecast(BaseModel):
+    month: str  # "2026-09"
+    month_name: str  # "Set/26"
+    total_amount: Decimal
+    transaction_count: int
+    by_card: List[CardDetailForecast] = []
+
+class CardsExecutiveSummaryResponse(BaseModel):
+    total_credit_limit: Decimal
+    total_used_limit: Decimal
+    total_available_limit: Decimal
+    usage_percentage: float
+    cards_count: int
+    current_month_invoice_total: Decimal
+    monthly_forecast: List[CardMonthlyForecast] = []
+
+
