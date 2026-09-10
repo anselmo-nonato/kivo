@@ -246,6 +246,17 @@ export default function RecurringPage() {
     return true;
   }) || [];
 
+  // Cálculo dinâmico de meses previstos até o término
+  const calculateMonthsSpan = () => {
+    if (!endDate) return null;
+    const start = new Date(startDate || new Date().toISOString().slice(0, 10));
+    const end = new Date(endDate);
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) return null;
+    const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()) + 1;
+    return Math.max(1, months);
+  };
+  const plannedMonths = calculateMonthsSpan();
+
   return (
     <AppLayout>
       <div className="space-y-8">
@@ -409,6 +420,7 @@ export default function RecurringPage() {
                           <span className="font-bold text-slate-900 block">{b.description}</span>
                           <span className="text-[10px] text-slate-400">
                             {b.account_name ? `Conta: ${b.account_name}` : "Conta Padrão"} • Início: {b.start_date}
+                            {b.end_date ? ` até ${b.end_date}` : ""}
                           </span>
                         </td>
                         <td className="py-3.5 px-4 whitespace-nowrap">
@@ -446,7 +458,7 @@ export default function RecurringPage() {
                             </button>
                             {b.has_synced_transactions ? (
                               <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded-md border border-indigo-200">
-                                📅 Extrato ({b.synced_transactions_count}m)
+                                📅 Extrato ({b.synced_transactions_count}p)
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-md border border-amber-200">
@@ -469,7 +481,7 @@ export default function RecurringPage() {
                             <button
                               onClick={() => handleSyncBillTransactions(b.id)}
                               className="p-1.5 rounded-lg text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 transition-colors cursor-pointer"
-                              title="Sincronizar / Gerar Lançamentos no Extrato (12 meses)"
+                              title="Sincronizar / Gerar Lançamentos no Extrato"
                             >
                               <RefreshCw className="w-3.5 h-3.5" />
                             </button>
@@ -738,10 +750,16 @@ export default function RecurringPage() {
                       onChange={(e) => setGenerateTransactions(e.target.checked)}
                       className="rounded text-indigo-600 focus:ring-indigo-500"
                     />
-                    <span>Gerar lançamentos no Extrato / Previsão Futura (12 meses)</span>
+                    <span>
+                      {plannedMonths
+                        ? `Gerar lançamentos até a data de término (${plannedMonths} ${plannedMonths === 1 ? "mês" : "meses"})`
+                        : "Gerar lançamentos no Extrato / Previsão Futura (12 meses)"}
+                    </span>
                   </label>
                   <p className="text-[11px] text-indigo-700 leading-relaxed pl-6">
-                    Serão criados lançamentos <b>Pendente (A Receber / A Pagar)</b> em cada mês futuro no dia {dueDay || "10"}.
+                    {plannedMonths
+                      ? `Serão criados ${plannedMonths} lançamentos como Pendente (A Receber / A Pagar) no dia ${dueDay || "10"} de cada mês até ${new Date(endDate + "T00:00:00").toLocaleDateString("pt-BR")}.`
+                      : `Como não possui data de término, serão criados 12 lançamentos como Pendente (A Receber / A Pagar) no dia ${dueDay || "10"} dos próximos meses.`}
                   </p>
                 </div>
 

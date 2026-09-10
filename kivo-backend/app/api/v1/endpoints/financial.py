@@ -1310,6 +1310,19 @@ async def generate_or_sync_recurring_transactions(
     if bill.start_date > start_dt:
         start_dt = date(bill.start_date.year, bill.start_date.month, 1)
 
+    # Se tiver data de término, remove eventuais lançamentos pendentes que ficaram além da nova data de término
+    if bill.end_date:
+        stmt_del_beyond = delete(Transaction).where(
+            Transaction.workspace_id == workspace_id,
+            Transaction.status == TransactionStatus.PENDING,
+            Transaction.transaction_date > bill.end_date,
+            or_(
+                Transaction.series_id == bill.id,
+                Transaction.notes.ilike(f"%[recurring_id:{bill.id}]%")
+            )
+        )
+        await db.execute(stmt_del_beyond)
+
     created_or_updated = 0
     tx_type = TransactionType.INCOME if bill.type == "income" else TransactionType.EXPENSE
     essentiality_val = EssentialityGrade.ESSENTIAL
@@ -1319,7 +1332,13 @@ async def generate_or_sync_recurring_transactions(
         except Exception:
             essentiality_val = EssentialityGrade.ESSENTIAL
 
-    for m in range(months_ahead):
+    if bill.end_date:
+        diff_months = (bill.end_date.year - start_dt.year) * 12 + (bill.end_date.month - start_dt.month) + 1
+        total_cycles = max(1, diff_months)
+    else:
+        total_cycles = months_ahead or 12
+
+    for m in range(total_cycles):
         target_month_dt = start_dt + relativedelta(months=m)
         year = target_month_dt.year
         month = target_month_dt.month
