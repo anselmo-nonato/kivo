@@ -633,6 +633,7 @@ async def list_transactions(
     workspace_id: UUID,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    account_id: Optional[UUID] = None,
     category_id: Optional[UUID] = None,
     cost_center_id: Optional[UUID] = None,
     tag_id: Optional[UUID] = None,
@@ -655,6 +656,8 @@ async def list_transactions(
         stmt = stmt.where(Transaction.transaction_date >= start_date)
     if end_date:
         stmt = stmt.where(Transaction.transaction_date <= end_date)
+    if account_id:
+        stmt = stmt.where(Transaction.account_id == account_id)
     if category_id:
         stmt = stmt.where(Transaction.category_id == category_id)
     if cost_center_id:

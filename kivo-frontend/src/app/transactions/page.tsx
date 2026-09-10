@@ -280,7 +280,7 @@ export default function TransactionsPage() {
     const matchType = !selectedTypeFilter || tx.type === selectedTypeFilter;
     const matchStatus = !selectedStatusFilter || tx.status === selectedStatusFilter;
     const matchTag = !selectedTagFilter || tx.tags?.some((t: any) => t.id === selectedTagFilter);
-    const matchAccount = !selectedAccountFilter || tx.account_id === selectedAccountFilter || tx.destination_account_id === selectedAccountFilter;
+    const matchAccount = !selectedAccountFilter || tx.account_id === selectedAccountFilter;
     return matchSearch && matchType && matchStatus && matchTag && matchAccount;
   });
 
