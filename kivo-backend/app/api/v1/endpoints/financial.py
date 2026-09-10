@@ -1281,6 +1281,16 @@ async def generate_or_sync_recurring_transactions(
             await db.flush()
         category_id = cat.id
 
+    # Responsável padrão se não informado
+    paid_by_id = bill.paid_by_member_id
+    if not paid_by_id:
+        stmt_member = select(WorkspaceMember).where(WorkspaceMember.workspace_id == workspace_id)
+        member = (await db.execute(stmt_member)).scalars().first()
+        paid_by_id = member.id if member else None
+
+    if not paid_by_id:
+        return 0
+
     # Busca lançamentos já existentes vinculados a esta conta fixa
     stmt_existing = select(Transaction).where(
         Transaction.workspace_id == workspace_id,
@@ -1302,8 +1312,8 @@ async def generate_or_sync_recurring_transactions(
 
     created_or_updated = 0
     tx_type = TransactionType.INCOME if bill.type == "income" else TransactionType.EXPENSE
-    essentiality_val = EssentialityGrade.NONE
-    if bill.type == "expense":
+    essentiality_val = EssentialityGrade.ESSENTIAL
+    if bill.essentiality:
         try:
             essentiality_val = EssentialityGrade(bill.essentiality)
         except Exception:
@@ -1331,7 +1341,7 @@ async def generate_or_sync_recurring_transactions(
                 existing_tx.account_id = account_id
                 existing_tx.cost_center_id = cost_center_id
                 existing_tx.category_id = category_id
-                existing_tx.paid_by_member_id = bill.paid_by_member_id
+                existing_tx.paid_by_member_id = paid_by_id
                 existing_tx.essentiality = essentiality_val
                 existing_tx.notes = f"[recurring_id:{bill.id}]".strip()
                 created_or_updated += 1
@@ -1342,7 +1352,7 @@ async def generate_or_sync_recurring_transactions(
             id=uuid.uuid4(),
             workspace_id=workspace_id,
             account_id=account_id,
-            paid_by_member_id=bill.paid_by_member_id,
+            paid_by_member_id=paid_by_id,
             cost_center_id=cost_center_id,
             category_id=category_id,
             amount=bill.amount,
