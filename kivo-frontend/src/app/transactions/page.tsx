@@ -23,7 +23,9 @@ import {
   Clock,
   ArrowDownLeft,
   ArrowUpRight,
-  ArrowLeftRight
+  ArrowLeftRight,
+  StickyNote,
+  FileText
 } from "lucide-react";
 
 export default function TransactionsPage() {
@@ -53,12 +55,16 @@ export default function TransactionsPage() {
     }
   }, []);
 
+  // Visualização de Anotações
+  const [showNotes, setShowNotes] = useState(false);
+
   // Modal Novo / Editar Lançamento
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [selectedTxId, setSelectedTxId] = useState<string | null>(null);
 
   const [description, setDescription] = useState("");
+  const [notes, setNotes] = useState("");
   const [amount, setAmount] = useState("");
   const [type, setType] = useState("expense");
   const [status, setStatus] = useState("paid");
@@ -75,6 +81,11 @@ export default function TransactionsPage() {
   const [hasCardFee, setHasCardFee] = useState(false);
   const [cardFeePercentage, setCardFeePercentage] = useState("5.0");
   const [error, setError] = useState("");
+
+  const cleanUserNotes = (rawNotes?: string | null) => {
+    if (!rawNotes) return "";
+    return rawNotes.replace(/\[transfer_direction:[^\]]+\]/g, "").trim();
+  };
 
   const loadData = async () => {
     if (!activeWorkspace) return;
@@ -136,6 +147,7 @@ export default function TransactionsPage() {
     setIsEditMode(false);
     setSelectedTxId(null);
     setDescription("");
+    setNotes("");
     setAmount("");
     setType(initialType);
     setStatus("paid");
@@ -154,6 +166,7 @@ export default function TransactionsPage() {
     setIsEditMode(true);
     setSelectedTxId(tx.id);
     setDescription(tx.description);
+    setNotes(cleanUserNotes(tx.notes || ""));
     setAmount(tx.amount);
     setType(tx.type);
     setStatus(tx.status);
@@ -208,11 +221,12 @@ export default function TransactionsPage() {
           transaction_date: transactionDate,
           paid_by_member_id: paidByMemberId || undefined,
           description: description.trim() || undefined,
-          notes: description.trim() || undefined,
+          notes: notes.trim() || undefined,
         });
       } else if (isEditMode && selectedTxId) {
         await api.put(`/workspaces/${activeWorkspace?.id}/transactions/${selectedTxId}`, {
           description: description.trim(),
+          notes: notes.trim() || null,
           amount: parseFloat(amount),
           type,
           status,
@@ -228,6 +242,7 @@ export default function TransactionsPage() {
       } else {
         await api.post(`/workspaces/${activeWorkspace?.id}/transactions`, {
           description: description.trim(),
+          notes: notes.trim() || null,
           amount: parseFloat(amount),
           type,
           status,
@@ -245,6 +260,7 @@ export default function TransactionsPage() {
 
       setIsModalOpen(false);
       setDescription("");
+      setNotes("");
       setAmount("");
       setTotalInstallments("1");
       setSelectedTagIds([]);
@@ -256,11 +272,15 @@ export default function TransactionsPage() {
 
   // Filtragem
   const filteredTransactions = transactions.filter((tx) => {
-    const matchSearch = tx.description.toLowerCase().includes(search.toLowerCase());
+    const cleanNotesText = cleanUserNotes(tx.notes);
+    const matchSearch =
+      tx.description.toLowerCase().includes(search.toLowerCase()) ||
+      cleanNotesText.toLowerCase().includes(search.toLowerCase()) ||
+      (tx.account_name && tx.account_name.toLowerCase().includes(search.toLowerCase()));
     const matchType = !selectedTypeFilter || tx.type === selectedTypeFilter;
     const matchStatus = !selectedStatusFilter || tx.status === selectedStatusFilter;
     const matchTag = !selectedTagFilter || tx.tags?.some((t: any) => t.id === selectedTagFilter);
-    const matchAccount = !selectedAccountFilter || tx.account_id === selectedAccountFilter;
+    const matchAccount = !selectedAccountFilter || tx.account_id === selectedAccountFilter || tx.destination_account_id === selectedAccountFilter;
     return matchSearch && matchType && matchStatus && matchTag && matchAccount;
   });
 
@@ -371,6 +391,21 @@ export default function TransactionsPage() {
               </option>
             ))}
           </select>
+
+          {/* Botão de Exibir/Ocultar Anotações na Tabela */}
+          <button
+            type="button"
+            onClick={() => setShowNotes(!showNotes)}
+            className={`px-3 py-2 rounded-xl border text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+              showNotes
+                ? "bg-amber-100 text-amber-900 border-amber-300 shadow-xs"
+                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-800"
+            }`}
+            title={showNotes ? "Ocultar anotações na tabela (ver apenas ao passar o mouse)" : "Exibir anotações visíveis diretamente na tabela"}
+          >
+            <StickyNote className={`w-3.5 h-3.5 ${showNotes ? "text-amber-700" : "text-slate-400"}`} />
+            <span>{showNotes ? "Anotações Visíveis" : "Anotações"}</span>
+          </button>
         </div>
 
         {/* Tabela de Lançamentos */}
@@ -400,6 +435,8 @@ export default function TransactionsPage() {
                   const destAccName = tx.destination_account_name || accounts.find((a) => a.id === tx.destination_account_id)?.name;
 
                   const isInvoicePayment = tx.description?.toLowerCase().includes("fatura") || tx.description?.toLowerCase().includes("crédito pagamento");
+                  const userNotes = cleanUserNotes(tx.notes);
+                  const hasNotes = userNotes.length > 0;
 
                   return (
                     <tr key={tx.id} className={`hover:bg-slate-50/80 transition-colors ${isPending ? "bg-amber-50/30" : isTransfer ? "bg-slate-50/30" : ""}`}>
@@ -407,7 +444,7 @@ export default function TransactionsPage() {
                         {tx.transaction_date}
                       </td>
                       <td className="py-3 px-4">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           {isInvoicePayment ? (
                             <CreditCard className="w-3.5 h-3.5 text-purple-600 shrink-0" />
                           ) : isTransfer ? (
@@ -417,8 +454,38 @@ export default function TransactionsPage() {
                           ) : (
                             <ArrowUpRight className="w-3.5 h-3.5 text-red-500 shrink-0" />
                           )}
-                          <span className="font-bold text-slate-800 block">{tx.description}</span>
+                          <span className="font-bold text-slate-800">{tx.description}</span>
+
+                          {/* Ícone de Anotação com Tooltip ao passar o mouse */}
+                          {hasNotes && (
+                            <div className="relative group/note inline-flex items-center ml-1">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEdit(tx)}
+                                className="p-1 rounded-md bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200/80 transition-colors cursor-pointer"
+                                title="Passar o mouse para ler | Clique para editar"
+                              >
+                                <StickyNote className="w-3 h-3 text-amber-600" />
+                              </button>
+
+                              {/* Tooltip flutuante no hover */}
+                              <div className="absolute left-0 bottom-full mb-2 hidden group-hover/note:flex flex-col z-40 w-72 p-3 bg-slate-900 text-white rounded-2xl shadow-2xl border border-slate-700 pointer-events-none animate-in fade-in zoom-in-95">
+                                <div className="flex items-center gap-1.5 text-[10px] text-amber-400 font-bold mb-1 uppercase tracking-wider">
+                                  <StickyNote className="w-3 h-3 text-amber-400" />
+                                  <span>Anotação do Lançamento</span>
+                                </div>
+                                <p className="text-xs text-slate-200 font-normal whitespace-pre-wrap leading-relaxed">
+                                  {userNotes}
+                                </p>
+                                <div className="text-[9px] text-slate-400 mt-2 pt-1.5 border-t border-slate-800 flex items-center justify-between">
+                                  <span>Clique no ícone para editar</span>
+                                  <span>📝 KIVO</span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
+
                         <div className="text-[11px] text-slate-400 pl-5 flex items-center gap-1.5 mt-0.5">
                           {isTransfer ? (
                             <span className="font-semibold text-slate-600">
@@ -428,6 +495,19 @@ export default function TransactionsPage() {
                             <span>{accName}</span>
                           )}
                         </div>
+
+                        {/* Modo Visível Expandido */}
+                        {showNotes && hasNotes && (
+                          <div className="mt-2 ml-5 p-2.5 rounded-xl bg-amber-50/90 border border-amber-200/90 text-amber-950 text-xs flex items-start gap-2 max-w-lg shadow-2xs">
+                            <StickyNote className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                            <div className="flex-1 min-w-0">
+                              <span className="font-semibold text-[10px] uppercase text-amber-800 tracking-wider block mb-0.5">Anotação:</span>
+                              <p className="font-medium whitespace-pre-wrap text-amber-900 leading-relaxed text-xs">
+                                {userNotes}
+                              </p>
+                            </div>
+                          </div>
+                        )}
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex flex-wrap gap-1">
@@ -968,6 +1048,21 @@ export default function TransactionsPage() {
                     </div>
                   </div>
                 )}
+
+                {/* Campo de Anotações / Observações */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                    <StickyNote className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Anotações / Observações (Opcional)</span>
+                  </label>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Adicione detalhes, observações ou comprovante para facilitar a identificação manual futura..."
+                    rows={2}
+                    className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-amber-400 focus:border-amber-400 resize-none font-medium text-slate-700 bg-amber-50/20"
+                  />
+                </div>
 
                 <button
                   type="submit"
