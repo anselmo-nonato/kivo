@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Calendar, ChevronLeft, ChevronRight } from "lucide-react";
+import { Calendar, ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Layers } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 
 interface TransactionPeriodNavigatorProps {
@@ -68,22 +68,22 @@ export function TransactionPeriodNavigator({
   };
 
   return (
-    <div className="p-4 md:p-5 rounded-3xl bg-white border border-slate-200 shadow-xs space-y-4">
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+    <div className="p-3.5 md:p-4 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         {/* Navegador de Mês */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 flex-wrap">
           <button
             type="button"
             onClick={handlePrevMonth}
-            className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
+            className="p-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
             title="Mês Anterior"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
 
-          <div className="relative flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-slate-100 border border-slate-200 cursor-pointer group">
+          <div className="relative flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 border border-slate-200 cursor-pointer group">
             <Calendar className="w-4 h-4 text-emerald-600" />
-            <span className="font-extrabold text-slate-800 text-sm whitespace-nowrap">
+            <span className="font-bold text-slate-800 text-xs sm:text-sm whitespace-nowrap">
               {periodMode === "month"
                 ? formatSelectedMonthName(selectedMonth)
                 : periodMode === "all"
@@ -107,7 +107,7 @@ export function TransactionPeriodNavigator({
           <button
             type="button"
             onClick={handleNextMonth}
-            className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
+            className="p-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 hover:text-slate-900 transition-colors cursor-pointer"
             title="Próximo Mês"
           >
             <ChevronRight className="w-4 h-4" />
@@ -116,7 +116,7 @@ export function TransactionPeriodNavigator({
           <button
             type="button"
             onClick={handleCurrentMonth}
-            className={`px-3 py-2 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
+            className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
               selectedMonth === currentMonthStr && periodMode === "month"
                 ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                 : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
@@ -127,14 +127,14 @@ export function TransactionPeriodNavigator({
         </div>
 
         {/* Modos de Visualização de Período */}
-        <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100 rounded-2xl">
+        <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl self-start sm:self-auto">
           <button
             type="button"
             onClick={() => {
               setPeriodMode("month");
               if (!selectedMonth) setSelectedMonth(currentMonthStr);
             }}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               periodMode === "month"
                 ? "bg-white text-slate-900 shadow-xs"
                 : "text-slate-500 hover:text-slate-800"
@@ -145,7 +145,7 @@ export function TransactionPeriodNavigator({
           <button
             type="button"
             onClick={() => setPeriodMode("all")}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               periodMode === "all"
                 ? "bg-white text-slate-900 shadow-xs"
                 : "text-slate-500 hover:text-slate-800"
@@ -156,7 +156,7 @@ export function TransactionPeriodNavigator({
           <button
             type="button"
             onClick={() => setPeriodMode("custom")}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               periodMode === "custom"
                 ? "bg-white text-slate-900 shadow-xs"
                 : "text-slate-500 hover:text-slate-800"
@@ -169,14 +169,14 @@ export function TransactionPeriodNavigator({
 
       {/* Seletor de Datas Personalizado */}
       {periodMode === "custom" && (
-        <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex flex-wrap items-center gap-3 animate-in fade-in">
+        <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex flex-wrap items-center gap-3 animate-in fade-in">
           <div className="flex items-center gap-2 text-xs">
             <span className="font-bold text-slate-600">De:</span>
             <input
               type="date"
               value={customStartDate}
               onChange={(e) => setCustomStartDate(e.target.value)}
-              className="px-3 py-1.5 bg-white rounded-xl border border-slate-300 text-xs font-medium text-slate-800"
+              className="px-2.5 py-1 bg-white rounded-lg border border-slate-300 text-xs font-medium text-slate-800"
             />
           </div>
           <div className="flex items-center gap-2 text-xs">
@@ -185,7 +185,7 @@ export function TransactionPeriodNavigator({
               type="date"
               value={customEndDate}
               onChange={(e) => setCustomEndDate(e.target.value)}
-              className="px-3 py-1.5 bg-white rounded-xl border border-slate-300 text-xs font-medium text-slate-800"
+              className="px-2.5 py-1 bg-white rounded-lg border border-slate-300 text-xs font-medium text-slate-800"
             />
           </div>
           {(customStartDate || customEndDate) && (
@@ -204,44 +204,61 @@ export function TransactionPeriodNavigator({
       )}
 
       {/* 4 Cards de Totais do Período Filtrado */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1 border-t border-slate-100">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 pt-2 border-t border-slate-100">
         {/* 1. Entradas */}
-        <div className="p-3.5 rounded-2xl bg-emerald-50/60 border border-emerald-100/80 space-y-0.5">
-          <span className="text-[10px] uppercase font-bold text-emerald-700 block">Entradas / Receitas</span>
-          <div className="text-lg font-extrabold text-emerald-600 tracking-tight">
-            + {formatCurrency(periodTotalIncome)}
+        <div className="p-3 rounded-xl bg-emerald-50/60 border border-emerald-100/80 flex items-center justify-between gap-2">
+          <div>
+            <span className="text-[10px] uppercase font-bold text-emerald-700 block">Entradas / Receitas</span>
+            <div className="text-base sm:text-lg font-extrabold text-emerald-600 tracking-tight">
+              + {formatCurrency(periodTotalIncome)}
+            </div>
+          </div>
+          <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 hidden sm:flex items-center justify-center shrink-0">
+            <TrendingUp className="w-4 h-4" />
           </div>
         </div>
 
         {/* 2. Saídas */}
-        <div className="p-3.5 rounded-2xl bg-red-50/60 border border-red-100/80 space-y-0.5">
-          <span className="text-[10px] uppercase font-bold text-red-700 block">Saídas / Despesas</span>
-          <div className="text-lg font-extrabold text-red-600 tracking-tight">
-            - {formatCurrency(periodTotalExpense)}
+        <div className="p-3 rounded-xl bg-red-50/60 border border-red-100/80 flex items-center justify-between gap-2">
+          <div>
+            <span className="text-[10px] uppercase font-bold text-red-700 block">Saídas / Despesas</span>
+            <div className="text-base sm:text-lg font-extrabold text-red-600 tracking-tight">
+              - {formatCurrency(periodTotalExpense)}
+            </div>
+          </div>
+          <div className="w-8 h-8 rounded-lg bg-red-100 text-red-700 hidden sm:flex items-center justify-center shrink-0">
+            <TrendingDown className="w-4 h-4" />
           </div>
         </div>
 
         {/* 3. Saldo Líquido do Período */}
         <div
-          className={`p-3.5 rounded-2xl border space-y-0.5 ${
+          className={`p-3 rounded-xl border flex items-center justify-between gap-2 ${
             periodNetBalance >= 0 ? "bg-slate-50 border-slate-200" : "bg-amber-50/60 border-amber-200"
           }`}
         >
-          <span className="text-[10px] uppercase font-bold text-slate-500 block">Resultado do Período</span>
-          <div
-            className={`text-lg font-extrabold tracking-tight ${
-              periodNetBalance >= 0 ? "text-slate-900" : "text-amber-700"
-            }`}
-          >
-            {periodNetBalance >= 0 ? "+" : "-"} {formatCurrency(Math.abs(periodNetBalance))}
+          <div>
+            <span className="text-[10px] uppercase font-bold text-slate-500 block">Resultado do Período</span>
+            <div
+              className={`text-base sm:text-lg font-extrabold tracking-tight ${
+                periodNetBalance >= 0 ? "text-slate-900" : "text-amber-700"
+              }`}
+            >
+              {periodNetBalance >= 0 ? "+" : "-"} {formatCurrency(Math.abs(periodNetBalance))}
+            </div>
           </div>
         </div>
 
         {/* 4. Total de Lançamentos */}
-        <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-0.5">
-          <span className="text-[10px] uppercase font-bold text-slate-400 block">Lançamentos</span>
-          <div className="text-lg font-extrabold text-slate-800 tracking-tight">
-            {filteredCount} {filteredCount === 1 ? "item" : "itens"}
+        <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-between gap-2">
+          <div>
+            <span className="text-[10px] uppercase font-bold text-slate-400 block">Lançamentos</span>
+            <div className="text-base sm:text-lg font-extrabold text-slate-800 tracking-tight">
+              {filteredCount} {filteredCount === 1 ? "item" : "itens"}
+            </div>
+          </div>
+          <div className="w-8 h-8 rounded-lg bg-slate-200/70 text-slate-600 hidden sm:flex items-center justify-center shrink-0">
+            <Layers className="w-4 h-4" />
           </div>
         </div>
       </div>

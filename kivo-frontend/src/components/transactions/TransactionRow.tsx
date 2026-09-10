@@ -52,10 +52,10 @@ export function TransactionRow({
         isPending ? "bg-amber-50/30" : isTransfer ? "bg-slate-50/30" : ""
       }`}
     >
-      <td className="py-3 px-4 font-mono text-slate-500 whitespace-nowrap">
+      <td className="py-2.5 px-4 font-mono text-slate-500 whitespace-nowrap text-[11px]">
         {tx.transaction_date}
       </td>
-      <td className="py-3 px-4">
+      <td className="py-2.5 px-4">
         <div className="flex items-center gap-1.5 flex-wrap">
           {isInvoicePayment ? (
             <CreditCard className="w-3.5 h-3.5 text-purple-600 shrink-0" />
@@ -66,10 +66,10 @@ export function TransactionRow({
           ) : (
             <ArrowUpRight className="w-3.5 h-3.5 text-red-500 shrink-0" />
           )}
-          <span className="font-bold text-slate-800">{tx.description}</span>
+          <span className="font-bold text-slate-800 text-xs">{tx.description}</span>
         </div>
 
-        <div className="text-[11px] text-slate-400 pl-5 flex items-center gap-1.5 mt-0.5">
+        <div className="text-[10px] text-slate-400 pl-5 flex items-center gap-1.5 mt-0.5">
           {isTransfer ? (
             <span className="font-semibold text-slate-600">
               🏦 {accName} {isOutflowTransfer ? "➔ 🏦 " + (destAccName || "Destino") : "⬅ 🏦 " + (destAccName || "Origem")}
@@ -81,20 +81,20 @@ export function TransactionRow({
 
         {/* Modo Visível Expandido */}
         {showNotes && hasNotes && (
-          <div className="mt-2 ml-5 p-2.5 rounded-xl bg-amber-50/90 border border-amber-200/90 text-amber-950 text-xs flex items-start gap-2 max-w-lg shadow-2xs">
+          <div className="mt-1.5 ml-5 p-2 rounded-xl bg-amber-50/90 border border-amber-200/90 text-amber-950 text-xs flex items-start gap-1.5 max-w-lg shadow-2xs">
             <StickyNote className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
-              <span className="font-semibold text-[10px] uppercase text-amber-800 tracking-wider block mb-0.5">
+              <span className="font-semibold text-[9px] uppercase text-amber-800 tracking-wider block">
                 Anotação:
               </span>
-              <p className="font-medium whitespace-pre-wrap text-amber-900 leading-relaxed text-xs">
+              <p className="font-medium whitespace-pre-wrap text-amber-900 leading-relaxed text-[11px]">
                 {userNotes}
               </p>
             </div>
           </div>
         )}
       </td>
-      <td className="py-3 px-4">
+      <td className="py-2.5 px-4">
         <div className="flex flex-wrap gap-1">
           {tx.tags?.map((t: any) => (
             <span
@@ -106,7 +106,7 @@ export function TransactionRow({
           ))}
         </div>
       </td>
-      <td className="py-3 px-4 whitespace-nowrap">
+      <td className="py-2.5 px-4 whitespace-nowrap">
         {isTransfer ? (
           isInvoicePayment ? (
             isOutflowTransfer ? (
@@ -117,18 +117,18 @@ export function TransactionRow({
             ) : (
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
                 <CreditCard className="w-3 h-3 text-purple-500" />
-                <span>Restauração de Limite</span>
+                <span>Restauração Limite</span>
               </span>
             )
           ) : isOutflowTransfer ? (
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-300">
               <ArrowLeftRight className="w-3 h-3 text-slate-500" />
-              <span>Transferência Enviada</span>
+              <span>Transf. Enviada</span>
             </span>
           ) : (
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
               <ArrowLeftRight className="w-3 h-3 text-indigo-500" />
-              <span>Transferência Recebida</span>
+              <span>Transf. Recebida</span>
             </span>
           )
         ) : isPending ? (
@@ -143,7 +143,7 @@ export function TransactionRow({
           </span>
         )}
       </td>
-      <td className="py-3 px-4 font-mono text-slate-400 whitespace-nowrap">
+      <td className="py-2.5 px-4 font-mono text-slate-400 whitespace-nowrap text-center text-xs">
         {tx.installment_total > 1
           ? `${tx.installment_current}/${tx.installment_total}`
           : isTransfer
@@ -151,31 +151,31 @@ export function TransactionRow({
           : "À vista"}
       </td>
       <td
-        className={`py-3 px-4 text-right font-extrabold whitespace-nowrap font-mono ${
+        className={`py-2.5 px-4 text-right font-extrabold whitespace-nowrap font-mono text-xs ${
           isInflowTransfer
-            ? "text-indigo-600 text-sm"
+            ? "text-indigo-600 font-bold"
             : isOutflowTransfer
             ? "text-slate-700"
             : isIncome
-            ? "text-emerald-600 text-sm"
+            ? "text-emerald-600 font-bold"
             : "text-slate-900"
         }`}
       >
         {isIncome || isInflowTransfer ? "+" : "-"} R${" "}
         {parseFloat(tx.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
       </td>
-      <td className="py-3 px-4 text-right whitespace-nowrap">
+      <td className="py-2.5 px-4 text-right whitespace-nowrap">
         <div className="flex items-center justify-end gap-1">
           {/* Botão de Efetivar / Baixa Rápida */}
           {isPending && (
             <button
               onClick={() => onConfirm(tx.id)}
-              className={`px-2 py-1 rounded-lg text-xs font-bold text-white flex items-center gap-1 transition-colors cursor-pointer ${
+              className={`px-2 py-0.5 rounded-lg text-[11px] font-bold text-white flex items-center gap-1 transition-colors cursor-pointer ${
                 isIncome ? "bg-emerald-600 hover:bg-emerald-700" : "bg-blue-600 hover:bg-blue-700"
               }`}
               title={isIncome ? "Confirmar Recebimento do Valor" : "Confirmar Pagamento Realizado"}
             >
-              <CheckCircle2 className="w-3.5 h-3.5" />
+              <CheckCircle2 className="w-3 h-3" />
               <span>{isIncome ? "Receber" : "Efetivar"}</span>
             </button>
           )}
