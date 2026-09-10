@@ -117,7 +117,12 @@ async def create_workspace(
         Category(id=uuid.uuid4(), workspace_id=workspace.id, name='Transporte', icon='car', color='#F59E0B'),
         Category(id=uuid.uuid4(), workspace_id=workspace.id, name='Saúde', icon='heart-pulse', color='#EF4444'),
         Category(id=uuid.uuid4(), workspace_id=workspace.id, name='Lazer & Conforto', icon='sparkles', color='#8B5CF6'),
-        Category(id=uuid.uuid4(), workspace_id=workspace.id, name='Receitas', icon='trending-up', color='#00D084'),
+        Category(id=uuid.uuid4(), workspace_id=workspace.id, name='Tarifas & Impostos', icon='receipt-text', color='#64748B'),
+        Category(id=uuid.uuid4(), workspace_id=workspace.id, name='Juros & Multas', icon='alert-triangle', color='#E11D48'),
+        Category(id=uuid.uuid4(), workspace_id=workspace.id, name='Educação', icon='graduation-cap', color='#0284C7'),
+        Category(id=uuid.uuid4(), workspace_id=workspace.id, name='Compras & Cuidados', icon='shopping-bag', color='#D97706'),
+        Category(id=uuid.uuid4(), workspace_id=workspace.id, name='Investimentos', icon='trending-up', color='#0D9488'),
+        Category(id=uuid.uuid4(), workspace_id=workspace.id, name='Receitas', icon='arrow-down-left', color='#00D084'),
     ]
     db.add_all(cats)
     await db.commit()

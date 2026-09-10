@@ -14,7 +14,7 @@ import csv
 import io
 import hashlib
 
-from app.services.pdf_parser import parse_pdf_statement, parse_sicoob_pdf, parse_caixa_pdf
+from app.services.pdf_parser import parse_pdf_statement, parse_sicoob_pdf, parse_caixa_pdf, find_matching_category
 
 from app.core.database import get_db
 from app.models import (
@@ -455,10 +455,14 @@ async def simulate_stress_scenario(
 # ==================== 5. PARSER OFX & CSV COM CATEGORIZAÇÃO INTELIGENTE (ISSUE #16) ====================
 
 CATEGORY_RULES = [
+    (r"(?i)(deb\.iof|iof|tarifa|tar conta|tarifa bancaria|custas)", "Tarifas & Impostos", "essential"),
+    (r"(?i)(juros cheque plus|juros adiant|juros|multa|mora|encargos)", "Juros & Multas", "waste"),
     (r"(?i)(ifood|rappi|restaurante|mcdonalds|burger|padaria|supermercado|carrefour|pao de acucar|assai)", "Alimentação", "essential"),
     (r"(?i)(uber|99app|posto|ipiranga|combustivel|gasolina|estacionamento|pedagio|sem parar)", "Transporte", "essential"),
     (r"(?i)(aluguel|condominio|enel|sabesp|cpfl|claro|vivo|internet|energia|copel)", "Moradia", "essential"),
     (r"(?i)(farmacia|drogaria|hospital|consulta|laboratorio|unimed|fleury|raia|drogasil)", "Saúde", "essential"),
+    (r"(?i)(curso|alura|udemy|escola|colegio|faculdade|livraria)", "Educação", "essential"),
+    (r"(?i)(zara|renner|riachuelo|shein|shopee|mercado livre|amazon|loja)", "Compras & Cuidados", "lifestyle"),
     (r"(?i)(netflix|spotify|cinema|steam|playstation|amazon prime|disney|bar|churrascaria)", "Lazer & Conforto", "lifestyle"),
     (r"(?i)(salario|pro-labore|pix recebido|ted recebida|dividendos|rendimento)", "Receitas", "essential"),
 ]
@@ -545,7 +549,7 @@ async def parse_import_file(
                         conf = 0.95
                         break
 
-                cat_obj = workspace_cats.get(sugg_cat_name.lower())
+                cat_obj = find_matching_category(sugg_cat_name, workspace_cats)
 
                 candidates.append(
                     ImportedTransactionCandidate(
@@ -596,7 +600,7 @@ async def parse_import_file(
                             conf = 0.95
                             break
 
-                    cat_obj = workspace_cats.get(sugg_cat_name.lower())
+                    cat_obj = find_matching_category(sugg_cat_name, workspace_cats)
 
                     candidates.append(
                         ImportedTransactionCandidate(

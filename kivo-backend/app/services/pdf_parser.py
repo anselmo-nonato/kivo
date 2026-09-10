@@ -7,33 +7,68 @@ from typing import List, Dict, Any, Optional
 import pdfplumber
 
 SICOOB_CATEGORY_RULES = [
-    (r"(?i)(deb\.iof|iof)", "Taxas e Tarifas", "essential"),
-    (r"(?i)(juros cheque plus|juros adiant|juros)", "Juros Bancários", "waste"),
+    (r"(?i)(deb\.iof|iof|tarifa|tar conta|tarifa bancaria|custas)", "Tarifas & Impostos", "essential"),
+    (r"(?i)(juros cheque plus|juros adiant|juros|multa|mora|encargos)", "Juros & Multas", "waste"),
     (r"(?i)(deb\.pgto\.boleto|pagamento de cartao|cartao de credito|cartão de crédito)", "Fatura de Cartão", "essential"),
-    (r"(?i)(deb\.conv|convenio|valem adm|dbauto)", "Contas de Consumo", "essential"),
-    (r"(?i)(pix rec|ted rec|recebimento pix)", "Receitas / Pix", "essential"),
-    (r"(?i)(pix\.emit|pix emit|pagamento pix|ted emit)", "Transferências / Pix", "lifestyle"),
+    (r"(?i)(deb\.conv|convenio|valem adm|dbauto)", "Moradia", "essential"),
+    (r"(?i)(pix rec|ted rec|recebimento pix)", "Receitas", "essential"),
+    (r"(?i)(pix\.emit|pix emit|pagamento pix|ted emit)", "Outros", "lifestyle"),
     (r"(?i)(ifood|rappi|restaurante|mcdonalds|burger|padaria|supermercado|carrefour|pao de acucar|assai)", "Alimentação", "essential"),
     (r"(?i)(uber|99app|posto|ipiranga|combustivel|gasolina|estacionamento|pedagio|sem parar)", "Transporte", "essential"),
     (r"(?i)(aluguel|condominio|enel|sabesp|cpfl|claro|vivo|internet|energia|copel)", "Moradia", "essential"),
     (r"(?i)(farmacia|drogaria|hospital|consulta|laboratorio|unimed|fleury|raia|drogasil)", "Saúde", "essential"),
+    (r"(?i)(curso|alura|udemy|escola|colegio|faculdade|livraria)", "Educação", "essential"),
+    (r"(?i)(zara|renner|riachuelo|shein|shopee|mercado livre|amazon|loja)", "Compras & Cuidados", "lifestyle"),
     (r"(?i)(netflix|spotify|cinema|steam|playstation|amazon prime|disney|bar|churrascaria)", "Lazer & Conforto", "lifestyle"),
     (r"(?i)(salario|pro-labore|dividendos|rendimento)", "Receitas", "essential"),
 ]
 
 CAIXA_CATEGORY_RULES = [
-    (r"(?i)(deb\.iof|iof|tarifa|tar conta)", "Taxas e Tarifas", "essential"),
-    (r"(?i)(juros|multa)", "Juros Bancários", "waste"),
+    (r"(?i)(deb\.iof|iof|tarifa|tar conta|tarifa bancaria|custas)", "Tarifas & Impostos", "essential"),
+    (r"(?i)(juros|multa|mora|encargos)", "Juros & Multas", "waste"),
     (r"(?i)(pagamento de boleto|cartoes caixa|fatura|cartao de credito|cartão de crédito)", "Fatura de Cartão", "essential"),
-    (r"(?i)(enel|sabesp|cpfl|claro|vivo|internet|energia|copel|agua|luz)", "Contas de Consumo", "essential"),
-    (r"(?i)(pix rec|pix recebido|ted rec|recebimento pix)", "Receitas / Pix", "essential"),
-    (r"(?i)(deb pix|pix emit|pagamento pix|ted emit|doc emit)", "Transferências / Pix", "lifestyle"),
+    (r"(?i)(enel|sabesp|cpfl|claro|vivo|internet|energia|copel|agua|luz)", "Moradia", "essential"),
+    (r"(?i)(pix rec|pix recebido|ted rec|recebimento pix)", "Receitas", "essential"),
+    (r"(?i)(deb pix|pix emit|pagamento pix|ted emit|doc emit)", "Outros", "lifestyle"),
     (r"(?i)(salario|pro-labore|verteron|pro labore|dividendos|rendimento)", "Receitas", "essential"),
     (r"(?i)(ifood|rappi|restaurante|mcdonalds|burger|padaria|supermercado|carrefour|pao de acucar|assai)", "Alimentação", "essential"),
     (r"(?i)(uber|99app|posto|ipiranga|combustivel|gasolina|estacionamento|pedagio|sem parar)", "Transporte", "essential"),
     (r"(?i)(farmacia|drogaria|hospital|consulta|laboratorio|unimed|fleury|raia|drogasil)", "Saúde", "essential"),
+    (r"(?i)(curso|alura|udemy|escola|colegio|faculdade|livraria)", "Educação", "essential"),
+    (r"(?i)(zara|renner|riachuelo|shein|shopee|mercado livre|amazon|loja)", "Compras & Cuidados", "lifestyle"),
     (r"(?i)(netflix|spotify|cinema|steam|playstation|amazon prime|disney|bar|churrascaria)", "Lazer & Conforto", "lifestyle"),
 ]
+
+def find_matching_category(sugg_cat_name: str, workspace_categories: Optional[Dict[str, Any]]) -> Optional[Any]:
+    if not workspace_categories:
+        return None
+    name_clean = sugg_cat_name.lower().strip()
+    if name_clean in workspace_categories:
+        return workspace_categories[name_clean]
+    
+    ALIASES = {
+        "tarifas & impostos": ["tarifas & impostos", "tarifas e impostos", "taxas e tarifas", "taxas & tarifas", "impostos", "tarifas", "taxas", "encargos bancários", "tarifas bancárias"],
+        "juros & multas": ["juros & multas", "juros e multas", "juros bancários", "juros", "multas", "encargos", "juros / multas"],
+        "alimentação": ["alimentação", "alimentacao", "mercado", "supermercado", "comida", "refeição"],
+        "moradia": ["moradia", "casa", "habitação", "contas de consumo"],
+        "transporte": ["transporte", "veículo", "combustível", "carro"],
+        "saúde": ["saúde", "saude", "farmácia", "médico"],
+        "lazer & conforto": ["lazer & conforto", "lazer", "entretenimento", "viagem"],
+        "educação": ["educação", "educacao", "estudos", "cursos"],
+        "compras & cuidados": ["compras & cuidados", "compras", "vestuário", "cuidados pessoais"],
+        "investimentos": ["investimentos", "investimento", "reserva", "poupança", "ações"],
+        "receitas": ["receitas", "receita", "renda", "salário", "pro-labore"],
+    }
+    
+    aliases_for_sugg = ALIASES.get(name_clean, [name_clean])
+    for ws_cat_name, ws_cat_obj in workspace_categories.items():
+        if ws_cat_name in aliases_for_sugg:
+            return ws_cat_obj
+        for alias in aliases_for_sugg:
+            if alias in ws_cat_name or ws_cat_name in alias:
+                return ws_cat_obj
+                
+    return None
 
 def parse_decimal_br(val_str: str) -> Decimal:
     clean = val_str.replace("R$", "").replace(" ", "").replace(".", "").replace(",", ".")
@@ -211,7 +246,7 @@ def parse_sicoob_pdf(
                     conf = 0.95
                     break
 
-            cat_obj = workspace_categories.get(sugg_cat_name.lower())
+            cat_obj = find_matching_category(sugg_cat_name, workspace_categories)
 
             hash_input = f"{acc_num}:{tx_date.isoformat()}:{amt_val}:{tx_type}:{doc_num or primary_title}"
             ext_id = hashlib.sha256(hash_input.encode()).hexdigest()[:24]
@@ -397,7 +432,7 @@ def parse_caixa_pdf(
                     conf = 0.95
                     break
 
-            cat_obj = workspace_categories.get(sugg_cat_name.lower())
+            cat_obj = find_matching_category(sugg_cat_name, workspace_categories)
 
             hash_input = f"CAIXA:{detected_account}:{tx_date.isoformat()}:{amt_val}:{tx_type}:{doc_num}"
             ext_id = hashlib.sha256(hash_input.encode()).hexdigest()[:24]
@@ -463,7 +498,7 @@ def parse_caixa_pdf(
                     conf = 0.95
                     break
 
-            cat_obj = workspace_categories.get(sugg_cat_name.lower())
+            cat_obj = find_matching_category(sugg_cat_name, workspace_categories)
             hash_input = f"CAIXA:{tx_date.isoformat()}:{amt_val}:{tx_type}:{doc_num or desc}"
             ext_id = hashlib.sha256(hash_input.encode()).hexdigest()[:24]
 
