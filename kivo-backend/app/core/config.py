@@ -3,7 +3,7 @@ from typing import List
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "KIVO API"
-    VERSION: str = "0.9.0"
+    VERSION: str = "0.10.0"
     API_V1_STR: str = "/api/v1"
     
     ENVIRONMENT: str = "dev"
