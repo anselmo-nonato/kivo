@@ -21,7 +21,10 @@ import {
   CheckCircle2,
   Power,
   Wallet,
-  Briefcase
+  Briefcase,
+  RefreshCw,
+  Layers,
+  Sparkles
 } from "lucide-react";
 
 export default function RecurringPage() {
@@ -32,6 +35,8 @@ export default function RecurringPage() {
   const [costCenters, setCostCenters] = useState<any[]>([]);
   const [members, setMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
 
   // Filtro de Visualização
   const [activeTab, setActiveTab] = useState<"all" | "expenses" | "incomes">("all");
@@ -55,6 +60,7 @@ export default function RecurringPage() {
   const [costCenterId, setCostCenterId] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [isActive, setIsActive] = useState(true);
+  const [generateTransactions, setGenerateTransactions] = useState(true);
   const [error, setError] = useState("");
 
   const loadData = async () => {
@@ -102,6 +108,7 @@ export default function RecurringPage() {
     setStartDate(new Date().toISOString().slice(0, 10));
     setEndDate("");
     setIsActive(true);
+    setGenerateTransactions(true);
     setError("");
     setIsModalOpen(true);
   };
@@ -122,6 +129,7 @@ export default function RecurringPage() {
     setCostCenterId(b.cost_center_id || "");
     setCategoryId(b.category_id || "");
     setIsActive(b.is_active);
+    setGenerateTransactions(true);
     setError("");
     setIsModalOpen(true);
   };
@@ -145,6 +153,9 @@ export default function RecurringPage() {
         cost_center_id: costCenterId || null,
         category_id: categoryId || null,
         is_active: isActive,
+        generate_transactions: generateTransactions,
+        sync_transactions: generateTransactions,
+        months_ahead: 12,
       };
 
       if (isEditMode && selectedBillId) {
@@ -161,7 +172,7 @@ export default function RecurringPage() {
   };
 
   const handleDeleteBill = async (id: string) => {
-    if (!confirm("Tem certeza que deseja excluir esta conta recorrente?")) return;
+    if (!confirm("Tem certeza que deseja excluir esta conta recorrente e remover seus lançamentos pendentes?")) return;
     try {
       await api.delete(`/workspaces/${activeWorkspace?.id}/recurring/${id}`);
       loadData();
@@ -181,6 +192,53 @@ export default function RecurringPage() {
     }
   };
 
+  const handleSyncBillTransactions = async (billId: string) => {
+    setActionLoading(true);
+    setSyncFeedback(null);
+    try {
+      await api.post(`/workspaces/${activeWorkspace?.id}/recurring/${billId}/sync-transactions?months_ahead=12`);
+      setSyncFeedback("Lançamentos sincronizados com sucesso no extrato!");
+      loadData();
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "Erro ao sincronizar lançamentos no extrato.");
+    } finally {
+      setActionLoading(false);
+      setTimeout(() => setSyncFeedback(null), 4000);
+    }
+  };
+
+  const handleClearBillTransactions = async (billId: string) => {
+    if (!confirm("Deseja limpar todos os lançamentos PENDENTES futuros desta conta fixa no Extrato?")) return;
+    setActionLoading(true);
+    setSyncFeedback(null);
+    try {
+      const res = await api.delete(`/workspaces/${activeWorkspace?.id}/recurring/${billId}/transactions`);
+      setSyncFeedback(res.data?.message || "Lançamentos pendentes removidos do extrato.");
+      loadData();
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "Erro ao limpar lançamentos do extrato.");
+    } finally {
+      setActionLoading(false);
+      setTimeout(() => setSyncFeedback(null), 4000);
+    }
+  };
+
+  const handleSyncAllBills = async () => {
+    if (!confirm("Deseja sincronizar todas as contas e rendas fixas ativas no Extrato para os próximos 12 meses?")) return;
+    setActionLoading(true);
+    setSyncFeedback(null);
+    try {
+      const res = await api.post(`/workspaces/${activeWorkspace?.id}/recurring/sync-all?months_ahead=12`);
+      setSyncFeedback(res.data?.message || "Todas as contas fixas foram sincronizadas com sucesso!");
+      loadData();
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "Erro ao sincronizar todas as contas fixas.");
+    } finally {
+      setActionLoading(false);
+      setTimeout(() => setSyncFeedback(null), 4000);
+    }
+  };
+
   // Filtragem por Tab
   const filteredBills = data?.bills?.filter((b: any) => {
     if (activeTab === "expenses") return b.type === "expense";
@@ -195,16 +253,25 @@ export default function RecurringPage() {
           <div>
             <h1 className="text-2xl font-extrabold text-slate-900">Contas & Rendas Fixas</h1>
             <p className="text-xs text-slate-500">
-              Controle de salários, pró-labore, aluguel, assinaturas e previsibilidade de caixa
+              Controle de salários, pró-labore, aluguel, assinaturas e sincronização no fluxo de caixa
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={handleSyncAllBills}
+              disabled={actionLoading}
+              className="px-3 py-2 rounded-xl bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+              title="Sincronizar todas as contas e rendas fixas no extrato"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${actionLoading ? "animate-spin" : ""}`} />
+              <span>Sincronizar Todas no Extrato</span>
+            </button>
             <button
               onClick={() => handleOpenCreate("income")}
               className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-500/20 flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <TrendingUp className="w-4 h-4" />
-              <span>+ Nova Renda Fixa (Salário)</span>
+              <span>+ Nova Renda Fixa</span>
             </button>
             <button
               onClick={() => handleOpenCreate("expense")}
@@ -215,6 +282,13 @@ export default function RecurringPage() {
             </button>
           </div>
         </div>
+
+        {syncFeedback && (
+          <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center gap-2 animate-in fade-in">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{syncFeedback}</span>
+          </div>
+        )}
 
         {/* Cards de Resumo */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -314,84 +388,126 @@ export default function RecurringPage() {
                   <th className="py-3.5 px-4">Categoria / Centro</th>
                   <th className="py-3.5 px-4">Dia do Crédito / Venc.</th>
                   <th className="py-3.5 px-4">Titular / Responsável</th>
-                  <th className="py-3.5 px-4">Status</th>
+                  <th className="py-3.5 px-4">Status & Extrato</th>
                   <th className="py-3.5 px-4 text-right">Valor Mensal</th>
                   <th className="py-3.5 px-4 text-right">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
-                {filteredBills.map((b: any) => {
-                  const isIncome = b.type === "income";
-                  return (
-                    <tr key={b.id} className={`hover:bg-slate-50/80 transition-colors ${!b.is_active ? "opacity-50" : ""}`}>
-                      <td className="py-3.5 px-4">
-                        <span className="font-bold text-slate-900 block">{b.description}</span>
-                        <span className="text-[10px] text-slate-400">
-                          {b.account_name ? `Conta: ${b.account_name}` : "Sem conta vinculada"} • Início: {b.start_date}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                            isIncome
-                              ? "bg-emerald-100 text-emerald-800"
-                              : "bg-red-100 text-red-800"
+                {filteredBills.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-8 text-center text-slate-400">
+                      Nenhuma conta fixa cadastrada nesta categoria.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredBills.map((b: any) => {
+                    const isIncome = b.type === "income";
+                    return (
+                      <tr key={b.id} className={`hover:bg-slate-50/80 transition-colors ${!b.is_active ? "opacity-50" : ""}`}>
+                        <td className="py-3.5 px-4">
+                          <span className="font-bold text-slate-900 block">{b.description}</span>
+                          <span className="text-[10px] text-slate-400">
+                            {b.account_name ? `Conta: ${b.account_name}` : "Conta Padrão"} • Início: {b.start_date}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 whitespace-nowrap">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                              isIncome
+                                ? "bg-emerald-100 text-emerald-800"
+                                : "bg-red-100 text-red-800"
+                            }`}
+                          >
+                            {isIncome ? "Renda Fixa" : "Despesa Fixa"}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className="font-semibold text-slate-700 block">{b.category_name || "Geral"}</span>
+                          <span className="text-[10px] text-slate-400">{b.cost_center_name || "Casa"}</span>
+                        </td>
+                        <td className="py-3.5 px-4 font-mono font-bold text-slate-700">
+                          Todo dia {b.due_day}
+                        </td>
+                        <td className="py-3.5 px-4 text-slate-700">
+                          {b.paid_by_member_name || "—"}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="flex flex-col gap-1 items-start">
+                            <button
+                              onClick={() => handleToggleActive(b)}
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border cursor-pointer ${
+                                b.is_active
+                                  ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                                  : "bg-slate-100 text-slate-500 border-slate-300"
+                              }`}
+                            >
+                              {b.is_active ? "Ativo" : "Pausado"}
+                            </button>
+                            {b.has_synced_transactions ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded-md border border-indigo-200">
+                                📅 Extrato ({b.synced_transactions_count}m)
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-md border border-amber-200">
+                                ⚠️ Fora Extrato
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td
+                          className={`py-3.5 px-4 text-right font-extrabold whitespace-nowrap font-mono text-sm ${
+                            isIncome ? "text-emerald-600" : "text-slate-900"
                           }`}
                         >
-                          {isIncome ? "Renda Fixa" : "Despesa Fixa"}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span className="font-semibold text-slate-700 block">{b.category_name || "Geral"}</span>
-                        <span className="text-[10px] text-slate-400">{b.cost_center_name || "Casa"}</span>
-                      </td>
-                      <td className="py-3.5 px-4 font-mono font-bold text-slate-700">
-                        Todo dia {b.due_day}
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-700">
-                        {b.paid_by_member_name || "—"}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <button
-                          onClick={() => handleToggleActive(b)}
-                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border cursor-pointer ${
-                            b.is_active
-                              ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                              : "bg-slate-100 text-slate-500 border-slate-300"
-                          }`}
-                        >
-                          {b.is_active ? "Ativo" : "Pausado"}
-                        </button>
-                      </td>
-                      <td
-                        className={`py-3.5 px-4 text-right font-extrabold whitespace-nowrap font-mono text-sm ${
-                          isIncome ? "text-emerald-600" : "text-slate-900"
-                        }`}
-                      >
-                        {isIncome ? "+" : "-"} R${" "}
-                        {parseFloat(b.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                      </td>
-                      <td className="py-3.5 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            onClick={() => handleOpenEdit(b)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-                            title="Editar"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteBill(b.id)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                            title="Excluir"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                          {isIncome ? "+" : "-"} R${" "}
+                          {parseFloat(b.amount).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="py-3.5 px-4 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            {/* Sincronizar no Extrato */}
+                            <button
+                              onClick={() => handleSyncBillTransactions(b.id)}
+                              className="p-1.5 rounded-lg text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 transition-colors cursor-pointer"
+                              title="Sincronizar / Gerar Lançamentos no Extrato (12 meses)"
+                            >
+                              <RefreshCw className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* Limpar do Extrato */}
+                            {b.has_synced_transactions && (
+                              <button
+                                onClick={() => handleClearBillTransactions(b.id)}
+                                className="p-1.5 rounded-lg text-amber-600 hover:text-amber-800 hover:bg-amber-50 transition-colors cursor-pointer"
+                                title="Limpar Lançamentos Pendentes do Extrato"
+                              >
+                                <Layers className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
+                            {/* Editar */}
+                            <button
+                              onClick={() => handleOpenEdit(b)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+                              title="Editar"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* Excluir */}
+                            <button
+                              onClick={() => handleDeleteBill(b.id)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                              title="Excluir"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
@@ -403,7 +519,7 @@ export default function RecurringPage() {
             <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-5 relative max-h-[90vh] overflow-y-auto">
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="absolute top-5 right-5 p-2 rounded-full hover:bg-slate-100 text-slate-400"
+                className="absolute top-5 right-5 p-2 rounded-full hover:bg-slate-100 text-slate-400 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -432,7 +548,7 @@ export default function RecurringPage() {
 
               {error && (
                 <div className="p-3 rounded-xl bg-red-50 text-red-700 text-xs font-semibold flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4" />
+                  <AlertCircle className="w-4 h-4 shrink-0" />
                   <span>{error}</span>
                 </div>
               )}
@@ -531,9 +647,10 @@ export default function RecurringPage() {
                       onChange={(e) => setAccountId(e.target.value)}
                       className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs"
                     >
-                      <option value="">Sem conta vinculada</option>
+                      <option value="">Conta padrão da workspace</option>
                       {accounts.map((a) => (
                         <option key={a.id} value={a.id}>
+                          {a.type === "credit_card" ? "💳 Cartão: " : "🏦 Conta: "}
                           {a.name}
                         </option>
                       ))}
@@ -566,7 +683,7 @@ export default function RecurringPage() {
                       onChange={(e) => setCategoryId(e.target.value)}
                       className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs"
                     >
-                      <option value="">Geral</option>
+                      <option value="">Padrão ({type === "income" ? "Renda Fixa" : "Despesas Fixas"})</option>
                       {categories.map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.name}
@@ -581,7 +698,7 @@ export default function RecurringPage() {
                       onChange={(e) => setCostCenterId(e.target.value)}
                       className="w-full px-3.5 py-2 rounded-xl border border-slate-300 text-xs"
                     >
-                      <option value="">Casa</option>
+                      <option value="">Casa / Geral</option>
                       {costCenters.map((cc) => (
                         <option key={cc.id} value={cc.id}>
                           {cc.name} ({cc.scope})
@@ -593,7 +710,7 @@ export default function RecurringPage() {
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Data de Início do Contrato</label>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Data de Início</label>
                     <input
                       type="date"
                       value={startDate}
@@ -613,11 +730,26 @@ export default function RecurringPage() {
                   </div>
                 </div>
 
+                <div className="p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl space-y-1">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-indigo-900">
+                    <input
+                      type="checkbox"
+                      checked={generateTransactions}
+                      onChange={(e) => setGenerateTransactions(e.target.checked)}
+                      className="rounded text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span>Gerar lançamentos no Extrato / Previsão Futura (12 meses)</span>
+                  </label>
+                  <p className="text-[11px] text-indigo-700 leading-relaxed pl-6">
+                    Serão criados lançamentos <b>Pendente (A Receber / A Pagar)</b> em cada mês futuro no dia {dueDay || "10"}.
+                  </p>
+                </div>
+
                 <button
                   type="submit"
                   className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-md shadow-emerald-500/20 transition-colors cursor-pointer"
                 >
-                  {isEditMode ? "Salvar Alterações" : type === "income" ? "Cadastrar Renda Fixa" : "Cadastrar Despesa Fixa"}
+                  {isEditMode ? "Salvar e Sincronizar" : type === "income" ? "Cadastrar e Sincronizar Renda" : "Cadastrar e Sincronizar Despesa"}
                 </button>
               </form>
             </div>
@@ -627,3 +759,4 @@ export default function RecurringPage() {
     </AppLayout>
   );
 }
+

@@ -1198,7 +1198,7 @@ async def get_monthly_summary(
 
 # ==================== 6. DESPESAS E RECEITAS FIXAS / RECORRENTES ====================
 
-def build_recurring_response(bill: RecurringBill) -> RecurringBillResponse:
+def build_recurring_response(bill: RecurringBill, synced_count: int = 0) -> RecurringBillResponse:
     return RecurringBillResponse(
         id=bill.id,
         workspace_id=bill.workspace_id,
@@ -1219,8 +1219,169 @@ def build_recurring_response(bill: RecurringBill) -> RecurringBillResponse:
         start_date=bill.start_date,
         end_date=bill.end_date,
         is_active=bill.is_active,
-        created_at=bill.created_at
+        created_at=bill.created_at,
+        has_synced_transactions=synced_count > 0,
+        synced_transactions_count=synced_count
     )
+
+
+async def generate_or_sync_recurring_transactions(
+    bill: RecurringBill,
+    workspace_id: UUID,
+    db: AsyncSession,
+    months_ahead: int = 12
+) -> int:
+    """Gera ou atualiza os lançamentos pendentes de previsão para os próximos meses da conta/renda fixa."""
+    if not bill.is_active:
+        return 0
+
+    account_id = bill.account_id
+    if not account_id:
+        stmt_acc = select(Account).where(Account.workspace_id == workspace_id, Account.type != AccountType.CREDIT_CARD)
+        acc = (await db.execute(stmt_acc)).scalars().first()
+        if not acc:
+            stmt_acc = select(Account).where(Account.workspace_id == workspace_id)
+            acc = (await db.execute(stmt_acc)).scalars().first()
+        account_id = acc.id if acc else None
+
+    if not account_id:
+        return 0
+
+    # Centro de custo padrão se não informado
+    cost_center_id = bill.cost_center_id
+    if not cost_center_id:
+        stmt_cc = select(CostCenter).where(CostCenter.workspace_id == workspace_id)
+        cost_center = (await db.execute(stmt_cc)).scalars().first()
+        if not cost_center:
+            cost_center = CostCenter(
+                id=uuid.uuid4(),
+                workspace_id=workspace_id,
+                name="Geral",
+                scope=CostCenterScope.FAMILY
+            )
+            db.add(cost_center)
+            await db.flush()
+        cost_center_id = cost_center.id
+
+    # Categoria padrão se não informada
+    category_id = bill.category_id
+    if not category_id:
+        default_cat_name = "Renda Fixa" if bill.type == "income" else "Despesas Fixas"
+        stmt_cat = select(Category).where(Category.workspace_id == workspace_id, Category.name == default_cat_name)
+        cat = (await db.execute(stmt_cat)).scalars().first()
+        if not cat:
+            cat = Category(
+                id=uuid.uuid4(),
+                workspace_id=workspace_id,
+                name=default_cat_name,
+                icon="repeat",
+                color="#00D084" if bill.type == "income" else "#EF4444"
+            )
+            db.add(cat)
+            await db.flush()
+        category_id = cat.id
+
+    # Busca lançamentos já existentes vinculados a esta conta fixa
+    stmt_existing = select(Transaction).where(
+        Transaction.workspace_id == workspace_id,
+        or_(
+            Transaction.series_id == bill.id,
+            Transaction.notes.ilike(f"%[recurring_id:{bill.id}]%")
+        )
+    )
+    existing_txs = (await db.execute(stmt_existing)).scalars().all()
+    existing_by_month = {
+        (tx.transaction_date.year, tx.transaction_date.month): tx
+        for tx in existing_txs
+    }
+
+    today = date.today()
+    start_dt = date(today.year, today.month, 1)
+    if bill.start_date > start_dt:
+        start_dt = date(bill.start_date.year, bill.start_date.month, 1)
+
+    created_or_updated = 0
+    tx_type = TransactionType.INCOME if bill.type == "income" else TransactionType.EXPENSE
+    essentiality_val = EssentialityGrade.NONE
+    if bill.type == "expense":
+        try:
+            essentiality_val = EssentialityGrade(bill.essentiality)
+        except Exception:
+            essentiality_val = EssentialityGrade.ESSENTIAL
+
+    for m in range(months_ahead):
+        target_month_dt = start_dt + relativedelta(months=m)
+        year = target_month_dt.year
+        month = target_month_dt.month
+        max_day = calendar.monthrange(year, month)[1]
+        due_day = min(bill.due_day, max_day)
+        tx_date = date(year, month, due_day)
+
+        if bill.end_date and tx_date > bill.end_date:
+            break
+
+        key = (year, month)
+        if key in existing_by_month:
+            existing_tx = existing_by_month[key]
+            # Se ainda estiver pendente, sincroniza valores/descrição atualizados
+            if existing_tx.status == TransactionStatus.PENDING:
+                existing_tx.amount = bill.amount
+                existing_tx.description = bill.description
+                existing_tx.transaction_date = tx_date
+                existing_tx.account_id = account_id
+                existing_tx.cost_center_id = cost_center_id
+                existing_tx.category_id = category_id
+                existing_tx.paid_by_member_id = bill.paid_by_member_id
+                existing_tx.essentiality = essentiality_val
+                existing_tx.notes = f"[recurring_id:{bill.id}]".strip()
+                created_or_updated += 1
+            continue
+
+        # Novo lançamento pendente de previsão futura
+        tx = Transaction(
+            id=uuid.uuid4(),
+            workspace_id=workspace_id,
+            account_id=account_id,
+            paid_by_member_id=bill.paid_by_member_id,
+            cost_center_id=cost_center_id,
+            category_id=category_id,
+            amount=bill.amount,
+            type=tx_type,
+            essentiality=essentiality_val,
+            transaction_date=tx_date,
+            status=TransactionStatus.PENDING,
+            series_id=bill.id,
+            installment_current=1,
+            installment_total=1,
+            description=bill.description,
+            notes=f"[recurring_id:{bill.id}]".strip()
+        )
+        db.add(tx)
+        created_or_updated += 1
+
+    return created_or_updated
+
+
+async def delete_recurring_transactions(
+    bill_id: UUID,
+    workspace_id: UUID,
+    db: AsyncSession,
+    only_pending: bool = True
+) -> int:
+    """Remove os lançamentos do extrato vinculados à conta fixa."""
+    conditions = [
+        Transaction.workspace_id == workspace_id,
+        or_(
+            Transaction.series_id == bill_id,
+            Transaction.notes.ilike(f"%[recurring_id:{bill_id}]%")
+        )
+    ]
+    if only_pending:
+        conditions.append(Transaction.status == TransactionStatus.PENDING)
+
+    stmt_del = delete(Transaction).where(and_(*conditions))
+    result = await db.execute(stmt_del)
+    return result.rowcount or 0
 
 
 @router.get("/{workspace_id}/recurring", response_model=RecurringSummaryResponse, summary="Listar e Resumir Despesas Fixas")
@@ -1242,6 +1403,16 @@ async def list_recurring_bills(
 
     bills = (await db.execute(stmt)).scalars().all()
 
+    # Mapa de contagem de lançamentos sincronizados
+    stmt_counts = select(
+        Transaction.series_id,
+        func.count(Transaction.id)
+    ).where(
+        Transaction.workspace_id == workspace_id,
+        Transaction.series_id.isnot(None)
+    ).group_by(Transaction.series_id)
+    counts_map = dict((await db.execute(stmt_counts)).all())
+
     total_expense = Decimal("0.00")
     total_income = Decimal("0.00")
     active_count = 0
@@ -1259,7 +1430,7 @@ async def list_recurring_bills(
         total_monthly_fixed_income=total_income,
         net_fixed_balance=total_income - total_expense,
         total_active_bills=active_count,
-        bills=[build_recurring_response(b) for b in bills]
+        bills=[build_recurring_response(b, synced_count=counts_map.get(b.id, 0)) for b in bills]
     )
 
 
@@ -1290,6 +1461,17 @@ async def create_recurring_bill(
         is_active=req.is_active
     )
     db.add(bill)
+    await db.flush()
+
+    synced_count = 0
+    if req.generate_transactions and bill.is_active:
+        synced_count = await generate_or_sync_recurring_transactions(
+            bill=bill,
+            workspace_id=workspace_id,
+            db=db,
+            months_ahead=req.months_ahead or 12
+        )
+
     await db.commit()
 
     stmt = select(RecurringBill).where(RecurringBill.id == bill.id).options(
@@ -1299,7 +1481,7 @@ async def create_recurring_bill(
         selectinload(RecurringBill.member)
     )
     saved = (await db.execute(stmt)).scalar_one()
-    return build_recurring_response(saved)
+    return build_recurring_response(saved, synced_count=synced_count)
 
 
 @router.put("/{workspace_id}/recurring/{bill_id}", response_model=RecurringBillResponse, summary="Atualizar Despesa Fixa")
@@ -1351,10 +1533,30 @@ async def update_recurring_bill(
         bill.category_id = req.category_id
     if req.is_active is not None:
         bill.is_active = req.is_active
+        if not bill.is_active:
+            # Se desativado, limpa as previsões pendentes futuras
+            await delete_recurring_transactions(bill.id, workspace_id, db, only_pending=True)
+
+    await db.flush()
+
+    if req.sync_transactions or (bill.is_active and req.sync_transactions is None):
+        await generate_or_sync_recurring_transactions(
+            bill=bill,
+            workspace_id=workspace_id,
+            db=db,
+            months_ahead=req.months_ahead or 12
+        )
 
     await db.commit()
     await db.refresh(bill)
-    return build_recurring_response(bill)
+
+    stmt_count = select(func.count(Transaction.id)).where(
+        Transaction.workspace_id == workspace_id,
+        Transaction.series_id == bill.id
+    )
+    synced_count = (await db.execute(stmt_count)).scalar() or 0
+
+    return build_recurring_response(bill, synced_count=synced_count)
 
 
 @router.delete("/{workspace_id}/recurring/{bill_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Excluir Despesa Fixa")
@@ -1374,7 +1576,94 @@ async def delete_recurring_bill(
     if not bill:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Despesa fixa não encontrada.")
 
+    # Limpa lançamentos pendentes vinculados
+    await delete_recurring_transactions(bill_id, workspace_id, db, only_pending=True)
+
     await db.delete(bill)
     await db.commit()
     return None
+
+
+@router.post("/{workspace_id}/recurring/{bill_id}/sync-transactions", response_model=RecurringBillResponse, summary="Sincronizar Lançamentos de Conta Fixa no Extrato")
+async def sync_recurring_bill_transactions(
+    workspace_id: UUID,
+    bill_id: UUID,
+    months_ahead: int = Query(default=12, ge=1, le=36),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    await get_workspace_membership(workspace_id, current_user.id, db)
+
+    stmt = select(RecurringBill).where(
+        RecurringBill.id == bill_id,
+        RecurringBill.workspace_id == workspace_id
+    ).options(
+        selectinload(RecurringBill.account),
+        selectinload(RecurringBill.category),
+        selectinload(RecurringBill.cost_center),
+        selectinload(RecurringBill.member)
+    )
+    bill = (await db.execute(stmt)).scalar_one_or_none()
+    if not bill:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conta fixa não encontrada.")
+
+    await generate_or_sync_recurring_transactions(
+        bill=bill,
+        workspace_id=workspace_id,
+        db=db,
+        months_ahead=months_ahead
+    )
+    await db.commit()
+    await db.refresh(bill)
+
+    stmt_count = select(func.count(Transaction.id)).where(
+        Transaction.workspace_id == workspace_id,
+        Transaction.series_id == bill.id
+    )
+    synced_count = (await db.execute(stmt_count)).scalar() or 0
+
+    return build_recurring_response(bill, synced_count=synced_count)
+
+
+@router.delete("/{workspace_id}/recurring/{bill_id}/transactions", response_model=Dict[str, str], summary="Limpar Lançamentos Pendentes de Conta Fixa no Extrato")
+async def clear_recurring_bill_transactions(
+    workspace_id: UUID,
+    bill_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    await get_workspace_membership(workspace_id, current_user.id, db)
+
+    deleted_count = await delete_recurring_transactions(bill_id, workspace_id, db, only_pending=True)
+    await db.commit()
+
+    return {"message": f"{deleted_count} lançamentos pendentes foram removidos com sucesso do extrato."}
+
+
+@router.post("/{workspace_id}/recurring/sync-all", response_model=Dict[str, str], summary="Sincronizar Todas as Contas Fixas no Extrato")
+async def sync_all_recurring_bills(
+    workspace_id: UUID,
+    months_ahead: int = Query(default=12, ge=1, le=36),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    await get_workspace_membership(workspace_id, current_user.id, db)
+
+    stmt = select(RecurringBill).where(
+        RecurringBill.workspace_id == workspace_id,
+        RecurringBill.is_active == True
+    )
+    bills = (await db.execute(stmt)).scalars().all()
+
+    total_synced = 0
+    for b in bills:
+        total_synced += await generate_or_sync_recurring_transactions(
+            bill=b,
+            workspace_id=workspace_id,
+            db=db,
+            months_ahead=months_ahead
+        )
+
+    await db.commit()
+    return {"message": f"Sincronização concluída com sucesso! {len(bills)} contas fixas processadas ({total_synced} lançamentos)."}
 

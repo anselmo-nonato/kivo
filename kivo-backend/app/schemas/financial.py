@@ -215,6 +215,8 @@ class RecurringBillCreateRequest(BaseModel):
     cost_center_id: Optional[UUID] = None
     category_id: Optional[UUID] = None
     is_active: bool = True
+    generate_transactions: bool = True
+    months_ahead: int = Field(default=12, ge=1, le=36)
 
 class RecurringBillUpdateRequest(BaseModel):
     description: Optional[str] = Field(None, min_length=1, max_length=255)
@@ -230,6 +232,8 @@ class RecurringBillUpdateRequest(BaseModel):
     cost_center_id: Optional[UUID] = None
     category_id: Optional[UUID] = None
     is_active: Optional[bool] = None
+    sync_transactions: Optional[bool] = None
+    months_ahead: Optional[int] = Field(default=12, ge=1, le=36)
 
 class RecurringBillResponse(BaseModel):
     id: UUID
@@ -252,6 +256,8 @@ class RecurringBillResponse(BaseModel):
     end_date: Optional[date] = None
     is_active: bool
     created_at: datetime
+    has_synced_transactions: bool = False
+    synced_transactions_count: int = 0
 
     class Config:
         from_attributes = True
